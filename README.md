@@ -13,6 +13,7 @@ CLI
 
 - `MatchingEngine` coordinates order submission, matching, cancellation, amendment, and pegged-order repricing.
 - `OrderBook` maintains ordered price levels and time priority within each level.
+- `Order` is a value type created through type-specific factories, keeping order construction separate from matching behavior.
 - The CLI runs until `exit` or end-of-file; `help` lists its commands and `print book` displays the current book.
 - Invalid commands and operations return readable `Error: ...` messages without terminating the session.
 ## Tooling
