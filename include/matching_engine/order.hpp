@@ -59,6 +59,9 @@ public:
         std::optional<Price> price = std::nullopt
     );
 
+    bool apply_peg_reference(std::optional<Price> reference_price);
+    bool cancel();
+
     OrderId id() const;
     OrderType type() const;
     Side side() const;

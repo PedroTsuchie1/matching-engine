@@ -65,6 +65,36 @@ Order Order::pegged(
     );
 }
 
+bool Order::apply_peg_reference(std::optional<Price> reference_price) {
+    if (type_ != OrderType::Pegged) {
+        return false;
+    }
+
+    if (status_ == OrderStatus::Filled ||
+        status_ == OrderStatus::Cancelled) {
+        return false;
+    }
+
+    price_ = reference_price;
+    status_ = reference_price.has_value()
+        ? OrderStatus::Active
+        : OrderStatus::Inactive;
+
+    return true;
+}
+
+bool Order::cancel() {
+    if (status_ == OrderStatus::Filled ||
+        status_ == OrderStatus::Cancelled) {
+        return false;
+    }
+
+    remaining_quantity_ = 0;
+    status_ = OrderStatus::Cancelled;
+
+    return true;
+}
+
 Order::Order(
     OrderId id,
     OrderType type,
