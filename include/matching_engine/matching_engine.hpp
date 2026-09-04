@@ -43,12 +43,17 @@ public:
         Quantity quantity
     );
 
+    SubmissionResult submit_market(
+        Side side, Quantity quantity
+    );
+
     const Order* find_order(OrderId id) const;
     const OrderBook& order_book() const;
 
     long long order_count() const;
 
 private:
+    std::vector<Trade> match(Order& aggressive_order);
     std::unordered_map<OrderId, Order> orders_by_id_;
 
     std::unordered_set<OrderId> bid_pegs_;

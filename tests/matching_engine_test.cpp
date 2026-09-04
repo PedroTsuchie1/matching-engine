@@ -462,5 +462,290 @@ TEST(MatchingEngineTest, SellAggressorTradesAtRestingBuyPrice) {
     EXPECT_EQ(engine.order_book().best(Side::Sell), nullptr);
 }
 
+TEST(MatchingEngineTest, RejectsInvalidMarketQuantityWithoutConsumingOrderId) {
+    MatchingEngine engine;
+
+    const SubmissionResult zero_quantity = engine.submit_market(
+        Side::Buy,
+        0
+    );
+    const SubmissionResult negative_quantity = engine.submit_market(
+        Side::Sell,
+        -10
+    );
+
+    ASSERT_TRUE(std::holds_alternative<EngineError>(zero_quantity));
+    ASSERT_TRUE(std::holds_alternative<EngineError>(negative_quantity));
+    EXPECT_EQ(
+        std::get<EngineError>(zero_quantity),
+        EngineError::InvalidQuantity
+    );
+    EXPECT_EQ(
+        std::get<EngineError>(negative_quantity),
+        EngineError::InvalidQuantity
+    );
+    EXPECT_EQ(engine.order_count(), 0);
+    EXPECT_TRUE(engine.order_book().empty());
+
+    const SubmissionResult valid_limit = engine.submit_limit(
+        Side::Buy,
+        10'00,
+        10
+    );
+    const SubmissionReport* report =
+        std::get_if<SubmissionReport>(&valid_limit);
+
+    ASSERT_NE(report, nullptr);
+    EXPECT_EQ(report->order_id, 1);
+}
+
+TEST(MatchingEngineTest, CancelsMarketOrderWhenBookIsEmpty) {
+    MatchingEngine engine;
+
+    const SubmissionResult result = engine.submit_market(
+        Side::Buy,
+        50
+    );
+    const SubmissionReport* report =
+        std::get_if<SubmissionReport>(&result);
+
+    ASSERT_NE(report, nullptr);
+    EXPECT_EQ(report->order_id, 1);
+    EXPECT_TRUE(report->trades.empty());
+    ASSERT_EQ(report->cancelled_order_ids.size(), 1);
+    EXPECT_EQ(report->cancelled_order_ids.front(), report->order_id);
+
+    const Order* market_order = engine.find_order(report->order_id);
+
+    ASSERT_NE(market_order, nullptr);
+    EXPECT_EQ(market_order->type(), OrderType::Market);
+    EXPECT_FALSE(market_order->price().has_value());
+    EXPECT_EQ(market_order->status(), OrderStatus::Cancelled);
+    EXPECT_EQ(market_order->remaining_quantity(), 0);
+    EXPECT_EQ(engine.order_count(), 1);
+    EXPECT_TRUE(engine.order_book().empty());
+}
+
+TEST(MatchingEngineTest, FullyFillsMarketOrderAgainstRestingLiquidity) {
+    MatchingEngine engine;
+
+    const SubmissionResult sell_result = engine.submit_limit(
+        Side::Sell,
+        10'25,
+        30
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Buy,
+        30
+    );
+
+    const SubmissionReport* sell =
+        std::get_if<SubmissionReport>(&sell_result);
+    const SubmissionReport* market =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(sell, nullptr);
+    ASSERT_NE(market, nullptr);
+    ASSERT_EQ(market->trades.size(), 1);
+    EXPECT_EQ(market->trades.front().resting_order_id, sell->order_id);
+    EXPECT_EQ(market->trades.front().aggressive_order_id, market->order_id);
+    EXPECT_EQ(market->trades.front().price, 10'25);
+    EXPECT_EQ(market->trades.front().quantity, 30);
+    EXPECT_TRUE(market->cancelled_order_ids.empty());
+
+    const Order* sell_order = engine.find_order(sell->order_id);
+    const Order* market_order = engine.find_order(market->order_id);
+
+    ASSERT_NE(sell_order, nullptr);
+    ASSERT_NE(market_order, nullptr);
+    EXPECT_EQ(sell_order->status(), OrderStatus::Filled);
+    EXPECT_EQ(market_order->status(), OrderStatus::Filled);
+    EXPECT_TRUE(engine.order_book().empty());
+}
+
+TEST(MatchingEngineTest, CancelsUnfilledMarketRemainderAfterPartialFill) {
+    MatchingEngine engine;
+
+    const SubmissionResult sell_result = engine.submit_limit(
+        Side::Sell,
+        10'00,
+        15
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Buy,
+        40
+    );
+
+    const SubmissionReport* sell =
+        std::get_if<SubmissionReport>(&sell_result);
+    const SubmissionReport* market =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(sell, nullptr);
+    ASSERT_NE(market, nullptr);
+    ASSERT_EQ(market->trades.size(), 1);
+    EXPECT_EQ(market->trades.front().quantity, 15);
+    ASSERT_EQ(market->cancelled_order_ids.size(), 1);
+    EXPECT_EQ(market->cancelled_order_ids.front(), market->order_id);
+
+    const Order* sell_order = engine.find_order(sell->order_id);
+    const Order* market_order = engine.find_order(market->order_id);
+
+    ASSERT_NE(sell_order, nullptr);
+    ASSERT_NE(market_order, nullptr);
+    EXPECT_EQ(sell_order->status(), OrderStatus::Filled);
+    EXPECT_EQ(market_order->status(), OrderStatus::Cancelled);
+    EXPECT_EQ(market_order->remaining_quantity(), 0);
+    EXPECT_TRUE(engine.order_book().empty());
+}
+
+TEST(MatchingEngineTest, MarketBuyConsumesMultipleSellPricesInPriorityOrder) {
+    MatchingEngine engine;
+
+    const SubmissionResult worse_sell_result = engine.submit_limit(
+        Side::Sell,
+        15'00,
+        10
+    );
+    const SubmissionResult better_sell_result = engine.submit_limit(
+        Side::Sell,
+        9'50,
+        20
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Buy,
+        25
+    );
+
+    const SubmissionReport* worse_sell =
+        std::get_if<SubmissionReport>(&worse_sell_result);
+    const SubmissionReport* better_sell =
+        std::get_if<SubmissionReport>(&better_sell_result);
+    const SubmissionReport* market =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(worse_sell, nullptr);
+    ASSERT_NE(better_sell, nullptr);
+    ASSERT_NE(market, nullptr);
+    ASSERT_EQ(market->trades.size(), 2);
+    EXPECT_EQ(
+        market->trades[0].resting_order_id,
+        better_sell->order_id
+    );
+    EXPECT_EQ(market->trades[0].price, 9'50);
+    EXPECT_EQ(market->trades[0].quantity, 20);
+    EXPECT_EQ(
+        market->trades[1].resting_order_id,
+        worse_sell->order_id
+    );
+    EXPECT_EQ(market->trades[1].price, 15'00);
+    EXPECT_EQ(market->trades[1].quantity, 5);
+    EXPECT_TRUE(market->cancelled_order_ids.empty());
+
+    const Order* remaining_sell =
+        engine.find_order(worse_sell->order_id);
+    const Order* market_order =
+        engine.find_order(market->order_id);
+
+    ASSERT_NE(remaining_sell, nullptr);
+    ASSERT_NE(market_order, nullptr);
+    EXPECT_EQ(remaining_sell->remaining_quantity(), 5);
+    EXPECT_EQ(remaining_sell->status(), OrderStatus::Active);
+    EXPECT_EQ(market_order->status(), OrderStatus::Filled);
+    EXPECT_EQ(engine.order_book().size(), 1);
+    EXPECT_EQ(engine.order_book().best(Side::Sell), remaining_sell);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), nullptr);
+}
+
+TEST(MatchingEngineTest, MarketSellConsumesBestBuyFirst) {
+    MatchingEngine engine;
+
+    const SubmissionResult worse_buy_result = engine.submit_limit(
+        Side::Buy,
+        10'00,
+        10
+    );
+    const SubmissionResult better_buy_result = engine.submit_limit(
+        Side::Buy,
+        10'50,
+        10
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Sell,
+        15
+    );
+
+    const SubmissionReport* worse_buy =
+        std::get_if<SubmissionReport>(&worse_buy_result);
+    const SubmissionReport* better_buy =
+        std::get_if<SubmissionReport>(&better_buy_result);
+    const SubmissionReport* market =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(worse_buy, nullptr);
+    ASSERT_NE(better_buy, nullptr);
+    ASSERT_NE(market, nullptr);
+    ASSERT_EQ(market->trades.size(), 2);
+    EXPECT_EQ(
+        market->trades[0].resting_order_id,
+        better_buy->order_id
+    );
+    EXPECT_EQ(market->trades[0].price, 10'50);
+    EXPECT_EQ(market->trades[0].quantity, 10);
+    EXPECT_EQ(
+        market->trades[1].resting_order_id,
+        worse_buy->order_id
+    );
+    EXPECT_EQ(market->trades[1].price, 10'00);
+    EXPECT_EQ(market->trades[1].quantity, 5);
+    EXPECT_TRUE(market->cancelled_order_ids.empty());
+
+    const Order* remaining_buy =
+        engine.find_order(worse_buy->order_id);
+
+    ASSERT_NE(remaining_buy, nullptr);
+    EXPECT_EQ(remaining_buy->remaining_quantity(), 5);
+    EXPECT_EQ(remaining_buy->status(), OrderStatus::Active);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), remaining_buy);
+    EXPECT_EQ(engine.order_book().best(Side::Sell), nullptr);
+}
+
+TEST(MatchingEngineTest, MarketOrderDoesNotMatchSameSideLiquidity) {
+    MatchingEngine engine;
+
+    const SubmissionResult limit_result = engine.submit_limit(
+        Side::Buy,
+        10'00,
+        20
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Buy,
+        10
+    );
+
+    const SubmissionReport* limit =
+        std::get_if<SubmissionReport>(&limit_result);
+    const SubmissionReport* market =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(limit, nullptr);
+    ASSERT_NE(market, nullptr);
+    EXPECT_TRUE(market->trades.empty());
+    ASSERT_EQ(market->cancelled_order_ids.size(), 1);
+    EXPECT_EQ(market->cancelled_order_ids.front(), market->order_id);
+
+    const Order* limit_order = engine.find_order(limit->order_id);
+    const Order* market_order = engine.find_order(market->order_id);
+
+    ASSERT_NE(limit_order, nullptr);
+    ASSERT_NE(market_order, nullptr);
+    EXPECT_EQ(limit_order->status(), OrderStatus::Active);
+    EXPECT_EQ(limit_order->remaining_quantity(), 20);
+    EXPECT_EQ(market_order->status(), OrderStatus::Cancelled);
+    EXPECT_EQ(engine.order_book().size(), 1);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), limit_order);
+    EXPECT_EQ(engine.order_book().best(Side::Sell), nullptr);
+}
+
 }  // namespace
 }  // namespace matching_engine

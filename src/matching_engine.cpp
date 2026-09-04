@@ -1,4 +1,5 @@
 #include "matching_engine/matching_engine.hpp"
+#include <algorithm>
 
 namespace matching_engine {
 namespace {
@@ -7,12 +8,18 @@ Side opposite_side(Side side) {
     return side == Side::Buy ? Side::Sell : Side::Buy;
 }
 
-bool crosses(
-    Side aggressive_side,
-    Price aggressive_price,
-    Price resting_price
+bool can_match(
+    const Order& aggressive_order,
+    const Order& resting_order
 ) {
-    if (aggressive_side == Side::Buy) {
+    if (aggressive_order.type() == OrderType::Market) {
+        return true;
+    }
+
+    const Price aggressive_price = aggressive_order.price().value();
+    const Price resting_price = resting_order.price().value();
+
+    if (aggressive_order.side() == Side::Buy) {
         return aggressive_price >= resting_price;
     }
 
@@ -49,60 +56,81 @@ SubmissionResult MatchingEngine::submit_limit(
     ).first;
 
     Order& aggressive_order = order_iterator->second;
-    std::vector<Trade> trades;
+    std::vector<Trade> trades = match(aggressive_order);
 
-    const Side resting_side = opposite_side(side);
-
-    while (aggressive_order.remaining_quantity() > 0) {
-        Order* resting_order = order_book_.best(resting_side);
-
-        if (resting_order == nullptr) {
-            break;
-        }
-
-        const Price resting_price =
-            resting_order->price().value();
-
-        if (!crosses(side, price, resting_price)) {
-            break;
-        }
-
-        const Quantity aggressive_quantity =
-            aggressive_order.remaining_quantity();
-        const Quantity resting_quantity =
-            resting_order->remaining_quantity();
-        const Quantity traded_quantity =
-            aggressive_quantity < resting_quantity
-                ? aggressive_quantity
-                : resting_quantity;
-
-        const OrderId resting_order_id =
-            resting_order->id();
-
-        aggressive_order.apply_fill(traded_quantity);
-        resting_order->apply_fill(traded_quantity);
-
-        trades.push_back(Trade{
-            resting_order_id,
-            order_id,
-            resting_price,
-            traded_quantity
-        });
-
-        if (resting_order->status() == OrderStatus::Filled) {
-            order_book_.remove(resting_order_id);
-        }
-    }
-
-    if (aggressive_order.status() == OrderStatus::Active) {
+    if (aggressive_order.status() == OrderStatus::Active)
         order_book_.add(aggressive_order);
-    }
-
+    
     return SubmissionReport{
         order_id,
         trades,
         {}
     };
+}
+
+SubmissionResult MatchingEngine::submit_market(
+    Side side, Quantity quantity
+) {
+    if (quantity <= 0) {
+        return EngineError::InvalidQuantity;
+    }
+
+    const OrderId order_id = next_order_id_++;
+    const Sequence sequence = next_sequence_++;
+
+    auto order_iterator = orders_by_id_.emplace(
+        order_id, Order::market(
+            order_id, side, quantity, sequence)
+    ).first;
+
+    Order& aggressive_order = order_iterator->second;
+
+    std::vector<Trade> trades = match(aggressive_order);
+    std::vector<OrderId> cancelled_order_ids;
+
+    if (aggressive_order.status() == OrderStatus::Active) {
+        aggressive_order.cancel();
+        cancelled_order_ids.push_back(order_id);
+    }
+
+    return SubmissionReport{
+        order_id,
+        trades,
+        cancelled_order_ids
+    };
+}
+
+std::vector<Trade> MatchingEngine::match(Order& aggressive_order) {
+    std::vector<Trade> trades;
+
+    const Side resting_side = opposite_side(aggressive_order.side());
+
+    while (aggressive_order.remaining_quantity() > 0) {
+        Order* resting_order = order_book_.best(resting_side);
+
+        if (resting_order == nullptr) 
+            break;
+        if (!can_match(aggressive_order, *resting_order))
+            break;
+        
+        const Quantity aggressive_quantity = aggressive_order.remaining_quantity();
+        const Quantity resting_quantity = (*resting_order).remaining_quantity();
+        const Quantity traded_quantity = std::min(resting_quantity, aggressive_quantity);
+
+        const OrderId resting_order_id = resting_order->id();
+
+        const Price trade_price = resting_order->price().value();
+
+        aggressive_order.apply_fill(traded_quantity);
+        resting_order->apply_fill(traded_quantity);
+        Trade aux= {resting_order_id, aggressive_order.id(), trade_price, traded_quantity};
+        trades.push_back(aux);
+
+        if (resting_order->status() == OrderStatus::Filled) {
+            order_book_.remove(resting_order_id);
+        }
+    }
+    return trades;
 }
 
 const Order* MatchingEngine::find_order(OrderId id) const {
