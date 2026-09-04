@@ -9,6 +9,7 @@ include(CTest)
 add_library(matching_engine_core STATIC
     src/order.cpp
     src/order_book.cpp
+    src/matching_engine.cpp
 )
 
 target_include_directories(matching_engine_core PUBLIC
@@ -61,6 +62,7 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/order_test.cpp")
     add_executable(matching_engine_tests
         tests/order_test.cpp
         tests/order_book_test.cpp
+        tests/matching_engine_test.cpp
     )
 
     target_link_libraries(matching_engine_tests PRIVATE
