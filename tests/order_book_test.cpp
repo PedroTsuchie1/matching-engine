@@ -17,6 +17,20 @@ TEST(OrderBookTest, StartsEmpty) {
     EXPECT_FALSE(book.best_limit_price(Side::Sell).has_value());
 }
 
+TEST(OrderBookTest, SupportsReadOnlyQueries) {
+    OrderBook book;
+    Order order = Order::limit(50, Side::Buy, 10'00, 10, 1);
+
+    ASSERT_TRUE(book.add(order));
+
+    const OrderBook& read_only_book = book;
+
+    EXPECT_EQ(read_only_book.find(order.id()), &order);
+    EXPECT_EQ(read_only_book.best(Side::Buy), &order);
+    EXPECT_EQ(read_only_book.size(), 1);
+    EXPECT_FALSE(read_only_book.empty());
+}
+
 TEST(OrderBookTest, PrioritizesBuyOrdersByPriceThenSequence) {
     OrderBook book;
     Order lower_price = Order::limit(1, Side::Buy, 10'00, 10, 1);
@@ -66,16 +80,12 @@ TEST(OrderBookTest, FindsAndRemovesActiveOrders) {
 TEST(OrderBookTest, RejectsOrdersThatCannotRest) {
     OrderBook book;
     Order market = Order::market(1, Side::Buy, 10, 1);
-    Order inactive_peg = Order::pegged(
-        2,
-        Side::Buy,
-        PegReference::Bid,
-        10,
-        2
-    );
+    Order cancelled = Order::limit(2, Side::Buy, 10'00, 10, 2);
+
+    ASSERT_TRUE(cancelled.cancel());
 
     EXPECT_FALSE(book.add(market));
-    EXPECT_FALSE(book.add(inactive_peg));
+    EXPECT_FALSE(book.add(cancelled));
     EXPECT_TRUE(book.empty());
 }
 
@@ -99,6 +109,31 @@ TEST(OrderBookTest, FindsLimitReferenceWhileIgnoringPeggedOrders) {
 
     const std::optional<Price> reference =
         book.best_limit_price(Side::Buy);
+
+    ASSERT_TRUE(reference.has_value());
+    EXPECT_EQ(reference.value(), 10'00);
+}
+
+TEST(OrderBookTest, FindsSellLimitReferenceWhileIgnoringPeggedOrders) {
+    OrderBook book;
+    Order peg = Order::pegged(
+        3,
+        Side::Sell,
+        PegReference::Offer,
+        10,
+        3,
+        9'50
+    );
+    Order limit = Order::limit(4, Side::Sell, 10'00, 10, 4);
+
+    ASSERT_TRUE(book.add(peg));
+    ASSERT_TRUE(book.add(limit));
+
+    ASSERT_NE(book.best(Side::Sell), nullptr);
+    EXPECT_EQ(book.best(Side::Sell)->id(), peg.id());
+
+    const std::optional<Price> reference =
+        book.best_limit_price(Side::Sell);
 
     ASSERT_TRUE(reference.has_value());
     EXPECT_EQ(reference.value(), 10'00);

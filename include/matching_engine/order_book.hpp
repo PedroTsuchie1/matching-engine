@@ -2,7 +2,6 @@
 
 #include "matching_engine/order.hpp"
 
-#include <cstddef>
 #include <functional>
 #include <list>
 #include <map>
@@ -16,13 +15,15 @@ public:
     bool add(Order& order);
 
     Order* find(OrderId id);
+    const Order* find(OrderId id) const;
     Order* best(Side side);
+    const Order* best(Side side) const;
 
     std::optional<Price> best_limit_price(Side side) const;
 
     bool remove(OrderId id);
 
-    std::size_t size() const;
+    long long size() const;
     bool empty() const;
 
 private:

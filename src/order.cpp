@@ -16,7 +16,7 @@ Order Order::limit(
         price,
         quantity,
         sequence,
-        PegReference::None,
+        std::nullopt,
         OrderStatus::Active
     );
 }
@@ -34,7 +34,7 @@ Order Order::market(
         std::nullopt,
         quantity,
         sequence,
-        PegReference::None,
+        std::nullopt,
         OrderStatus::Active
     );
 }
@@ -45,28 +45,22 @@ Order Order::pegged(
     PegReference peg_reference,
     Quantity quantity,
     Sequence sequence,
-    std::optional<Price> price
+    Price price
 ) {
-    OrderStatus status = OrderStatus::Inactive;
-
-    if (price.has_value()) {
-        status = OrderStatus::Active;
-    }
-
     return Order(
         id,
-        OrderType::Pegged,
+        OrderType::Limit,
         side,
         price,
         quantity,
         sequence,
         peg_reference,
-        status
+        OrderStatus::Active
     );
 }
 
-bool Order::apply_peg_reference(std::optional<Price> reference_price) {
-    if (type_ != OrderType::Pegged) {
+bool Order::apply_peg_reference(Price reference_price) {
+    if (!is_pegged()) {
         return false;
     }
 
@@ -76,9 +70,6 @@ bool Order::apply_peg_reference(std::optional<Price> reference_price) {
     }
 
     price_ = reference_price;
-    status_ = reference_price.has_value()
-        ? OrderStatus::Active
-        : OrderStatus::Inactive;
 
     return true;
 }
@@ -95,6 +86,24 @@ bool Order::cancel() {
     return true;
 }
 
+bool Order::apply_fill(Quantity quantity) {
+    if (status_ != OrderStatus::Active) {
+        return false;
+    }
+
+    if (quantity <= 0 || quantity > remaining_quantity_) {
+        return false;
+    }
+
+    remaining_quantity_ -= quantity;
+
+    if (remaining_quantity_ == 0) {
+        status_ = OrderStatus::Filled;
+    }
+
+    return true;
+}
+
 Order::Order(
     OrderId id,
     OrderType type,
@@ -102,7 +111,7 @@ Order::Order(
     std::optional<Price> price,
     Quantity quantity,
     Sequence sequence,
-    PegReference peg_reference,
+    std::optional<PegReference> peg_reference,
     OrderStatus status
 )
     : id_(id),
@@ -144,8 +153,12 @@ Sequence Order::sequence() const {
     return sequence_;
 }
 
-PegReference Order::peg_reference() const {
+std::optional<PegReference> Order::peg_reference() const {
     return peg_reference_;
+}
+
+bool Order::is_pegged() const {
+    return peg_reference_.has_value();
 }
 
 OrderStatus Order::status() const {

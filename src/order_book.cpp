@@ -49,7 +49,33 @@ Order* OrderBook::find(OrderId id) {
     return *index_iterator->second;
 }
 
+const Order* OrderBook::find(OrderId id) const {
+    const auto index_iterator = order_index_.find(id);
+
+    if (index_iterator == order_index_.end()) {
+        return nullptr;
+    }
+
+    return *index_iterator->second;
+}
+
 Order* OrderBook::best(Side side) {
+    if (side == Side::Buy) {
+        if (buys_.empty()) {
+            return nullptr;
+        }
+
+        return buys_.begin()->second.front();
+    }
+
+    if (sells_.empty()) {
+        return nullptr;
+    }
+
+    return sells_.begin()->second.front();
+}
+
+const Order* OrderBook::best(Side side) const {
     if (side == Side::Buy) {
         if (buys_.empty()) {
             return nullptr;
@@ -69,7 +95,8 @@ std::optional<Price> OrderBook::best_limit_price(Side side) const {
     if (side == Side::Buy) {
         for (const auto& [price, price_level] : buys_) {
             for (const Order* order : price_level) {
-                if (order->type() == OrderType::Limit) {
+                if (order->type() == OrderType::Limit &&
+                    !order->is_pegged()) {
                     return price;
                 }
             }
@@ -80,7 +107,8 @@ std::optional<Price> OrderBook::best_limit_price(Side side) const {
 
     for (const auto& [price, price_level] : sells_) {
         for (const Order* order : price_level) {
-            if (order->type() == OrderType::Limit) {
+            if (order->type() == OrderType::Limit &&
+                !order->is_pegged()) {
                 return price;
             }
         }
@@ -125,8 +153,8 @@ bool OrderBook::remove(OrderId id) {
     return true;
 }
 
-std::size_t OrderBook::size() const {
-    return order_index_.size();
+long long OrderBook::size() const {
+    return static_cast<long long>(order_index_.size());
 }
 
 bool OrderBook::empty() const {

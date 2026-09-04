@@ -1,18 +1,17 @@
 #pragma once
-#include <cstdint>
+
 #include <optional>
 
 namespace matching_engine {
 
-using OrderId = std::uint64_t;
-using Sequence = std::uint64_t;
-using Quantity = std::uint64_t;
-using Price = std::int64_t;
+using OrderId = long long;
+using Sequence = long long;
+using Quantity = long long;
+using Price = long long;
 
 enum class OrderType {
     Limit,
-    Market,
-    Pegged
+    Market
 };
 
 enum class Side {
@@ -21,14 +20,12 @@ enum class Side {
 };
 
 enum class PegReference {
-    None,
     Bid,
     Offer
 };
 
 enum class OrderStatus {
     Active,
-    Inactive,
     Filled,
     Cancelled
 };
@@ -56,11 +53,12 @@ public:
         PegReference peg_reference,
         Quantity quantity,
         Sequence sequence,
-        std::optional<Price> price = std::nullopt
+        Price price
     );
 
-    bool apply_peg_reference(std::optional<Price> reference_price);
+    bool apply_peg_reference(Price reference_price);
     bool cancel();
+    bool apply_fill(Quantity quantity);
 
     OrderId id() const;
     OrderType type() const;
@@ -69,7 +67,8 @@ public:
     Quantity original_quantity() const;
     Quantity remaining_quantity() const;
     Sequence sequence() const;
-    PegReference peg_reference() const;
+    std::optional<PegReference> peg_reference() const;
+    bool is_pegged() const;
     OrderStatus status() const;
 
 private:
@@ -80,7 +79,7 @@ private:
         std::optional<Price> price,
         Quantity quantity,
         Sequence sequence,
-        PegReference peg_reference,
+        std::optional<PegReference> peg_reference,
         OrderStatus status
     );
 
@@ -91,7 +90,7 @@ private:
     Quantity original_quantity_;
     Quantity remaining_quantity_;
     Sequence sequence_;
-    PegReference peg_reference_;
+    std::optional<PegReference> peg_reference_;
     OrderStatus status_;
 };
 
