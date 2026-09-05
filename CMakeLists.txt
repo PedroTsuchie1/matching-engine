@@ -28,11 +28,34 @@ target_compile_options(matching_engine_core PRIVATE
     -Wpedantic
 )
 
+add_library(matching_engine_console STATIC
+    src/formatting.cpp
+    src/console.cpp
+)
+
+target_include_directories(matching_engine_console PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(matching_engine_console PUBLIC matching_engine_core)
+
+target_compile_features(matching_engine_console PUBLIC cxx_std_20)
+
+set_target_properties(matching_engine_console PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+target_compile_options(matching_engine_console PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
 add_executable(matching_engine
     src/main.cpp
 )
 
-target_link_libraries(matching_engine PRIVATE matching_engine_core)
+target_link_libraries(matching_engine PRIVATE matching_engine_console)
 
 target_compile_features(matching_engine PRIVATE cxx_std_20)
 
@@ -63,10 +86,13 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/order_test.cpp")
         tests/order_test.cpp
         tests/order_book_test.cpp
         tests/matching_engine_test.cpp
+        tests/formatting_test.cpp
+        tests/console_test.cpp
     )
 
     target_link_libraries(matching_engine_tests PRIVATE
         matching_engine_core
+        matching_engine_console
         GTest::gtest_main
     )
 
