@@ -139,5 +139,138 @@ TEST(OrderBookTest, FindsSellLimitReferenceWhileIgnoringPeggedOrders) {
     EXPECT_EQ(reference.value(), 10'00);
 }
 
+TEST(OrderBookTest, CreatesEmptySnapshot) {
+    const OrderBook book;
+
+    const OrderBookSnapshot snapshot = book.snapshot();
+
+    EXPECT_TRUE(snapshot.buys.empty());
+    EXPECT_TRUE(snapshot.sells.empty());
+}
+
+TEST(OrderBookTest, SnapshotPreservesPriceTimePriority) {
+    OrderBook book;
+
+    Order lower_buy = Order::limit(
+        1,
+        Side::Buy,
+        10'00,
+        10,
+        1
+    );
+
+    Order later_best_buy = Order::limit(
+        2,
+        Side::Buy,
+        10'50,
+        20,
+        4
+    );
+
+    Order earlier_best_buy = Order::limit(
+        3,
+        Side::Buy,
+        10'50,
+        30,
+        2
+    );
+
+    Order higher_sell = Order::limit(
+        4,
+        Side::Sell,
+        11'00,
+        40,
+        3
+    );
+
+    Order lower_sell = Order::limit(
+        5,
+        Side::Sell,
+        10'75,
+        50,
+        5
+    );
+
+    ASSERT_TRUE(book.add(lower_buy));
+    ASSERT_TRUE(book.add(later_best_buy));
+    ASSERT_TRUE(book.add(earlier_best_buy));
+    ASSERT_TRUE(book.add(higher_sell));
+    ASSERT_TRUE(book.add(lower_sell));
+
+    const OrderBookSnapshot snapshot = book.snapshot();
+
+    ASSERT_EQ(snapshot.buys.size(), 2);
+    EXPECT_EQ(snapshot.buys[0].price, 10'50);
+    EXPECT_EQ(snapshot.buys[0].total_quantity, 50);
+    ASSERT_EQ(snapshot.buys[0].orders.size(), 2);
+    EXPECT_EQ(snapshot.buys[0].orders[0].order_id, 3);
+    EXPECT_EQ(snapshot.buys[0].orders[1].order_id, 2);
+
+    EXPECT_EQ(snapshot.buys[1].price, 10'00);
+    EXPECT_EQ(snapshot.buys[1].total_quantity, 10);
+    ASSERT_EQ(snapshot.buys[1].orders.size(), 1);
+    EXPECT_EQ(snapshot.buys[1].orders[0].order_id, 1);
+
+    ASSERT_EQ(snapshot.sells.size(), 2);
+    EXPECT_EQ(snapshot.sells[0].price, 10'75);
+    EXPECT_EQ(snapshot.sells[0].total_quantity, 50);
+    ASSERT_EQ(snapshot.sells[0].orders.size(), 1);
+    EXPECT_EQ(snapshot.sells[0].orders[0].order_id, 5);
+
+    EXPECT_EQ(snapshot.sells[1].price, 11'00);
+    EXPECT_EQ(snapshot.sells[1].total_quantity, 40);
+    ASSERT_EQ(snapshot.sells[1].orders.size(), 1);
+    EXPECT_EQ(snapshot.sells[1].orders[0].order_id, 4);
+}
+
+TEST(OrderBookTest, SnapshotCopiesOrderDetails) {
+    OrderBook book;
+
+    Order limit = Order::limit(
+        10,
+        Side::Buy,
+        10'00,
+        25,
+        1
+    );
+
+    Order peg = Order::pegged(
+        11,
+        Side::Buy,
+        PegReference::Bid,
+        15,
+        2,
+        10'00
+    );
+
+    ASSERT_TRUE(book.add(limit));
+    ASSERT_TRUE(book.add(peg));
+    ASSERT_TRUE(limit.apply_fill(5));
+
+    const OrderBookSnapshot snapshot = book.snapshot();
+
+    ASSERT_EQ(snapshot.buys.size(), 1);
+
+    const BookLevelSnapshot& level = snapshot.buys[0];
+
+    EXPECT_EQ(level.price, 10'00);
+    EXPECT_EQ(level.total_quantity, 35);
+    ASSERT_EQ(level.orders.size(), 2);
+
+    EXPECT_EQ(level.orders[0].order_id, 10);
+    EXPECT_EQ(level.orders[0].remaining_quantity, 20);
+    EXPECT_EQ(level.orders[0].sequence, 1);
+    EXPECT_FALSE(level.orders[0].peg_reference.has_value());
+
+    EXPECT_EQ(level.orders[1].order_id, 11);
+    EXPECT_EQ(level.orders[1].remaining_quantity, 15);
+    EXPECT_EQ(level.orders[1].sequence, 2);
+    ASSERT_TRUE(level.orders[1].peg_reference.has_value());
+    EXPECT_EQ(
+        level.orders[1].peg_reference.value(),
+        PegReference::Bid
+    );
+}
+
 }  // namespace
 }  // namespace matching_engine

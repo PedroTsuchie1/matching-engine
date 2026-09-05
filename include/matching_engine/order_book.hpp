@@ -7,8 +7,27 @@
 #include <map>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 namespace matching_engine {
+
+struct BookOrderSnapshot {
+    OrderId order_id;
+    Quantity remaining_quantity;
+    Sequence sequence;
+    std::optional<PegReference> peg_reference;
+};
+
+struct BookLevelSnapshot {
+    Price price;
+    Quantity total_quantity;
+    std::vector<BookOrderSnapshot> orders;
+};
+
+struct OrderBookSnapshot {
+    std::vector<BookLevelSnapshot> buys;
+    std::vector<BookLevelSnapshot> sells;
+};
 
 class OrderBook {
 public:
@@ -20,6 +39,8 @@ public:
     const Order* best(Side side) const;
 
     std::optional<Price> best_limit_price(Side side) const;
+
+    OrderBookSnapshot snapshot() const;
 
     bool remove(OrderId id);
 

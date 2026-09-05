@@ -3,6 +3,44 @@
 #include <algorithm>
 
 namespace matching_engine {
+namespace {
+
+template <typename SideBook>
+std::vector<BookLevelSnapshot> make_snapshot_levels(
+    const SideBook& side_book
+) {
+    std::vector<BookLevelSnapshot> levels;
+    levels.reserve(side_book.size());
+
+    for (const auto& [price, price_level] : side_book) {
+        BookLevelSnapshot level{
+            price,
+            0,
+            {}
+        };
+
+        level.orders.reserve(price_level.size());
+
+        for (const Order* order : price_level) {
+            level.total_quantity += order->remaining_quantity();
+
+            level.orders.push_back(
+                BookOrderSnapshot{
+                    order->id(),
+                    order->remaining_quantity(),
+                    order->sequence(),
+                    order->peg_reference()
+                }
+            );
+        }
+
+        levels.push_back(level);
+    }
+
+    return levels;
+}
+
+}  // namespace
 
 bool OrderBook::add(Order& order) {
     const std::optional<Price> price = order.price();
@@ -115,6 +153,13 @@ std::optional<Price> OrderBook::best_limit_price(Side side) const {
     }
 
     return std::nullopt;
+}
+
+OrderBookSnapshot OrderBook::snapshot() const {
+    return OrderBookSnapshot{
+        make_snapshot_levels(buys_),
+        make_snapshot_levels(sells_)
+    };
 }
 
 bool OrderBook::remove(OrderId id) {
