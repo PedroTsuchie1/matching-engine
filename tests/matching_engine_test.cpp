@@ -916,5 +916,402 @@ TEST(MatchingEngineTest, AcceptsOfferPegAtBestRegularSellPrice) {
     EXPECT_EQ(reference.value(), 10'50);
 }
 
+TEST(MatchingEngineTest, RepricesBidPegAfterBetterBuyLimitRests) {
+    MatchingEngine engine;
+
+    engine.submit_limit(Side::Buy, 10'00, 20);
+    const SubmissionResult peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        15
+    );
+    const SubmissionResult better_limit_result = engine.submit_limit(
+        Side::Buy,
+        10'50,
+        30
+    );
+
+    const SubmissionReport* peg_report =
+        std::get_if<SubmissionReport>(&peg_result);
+    const SubmissionReport* better_limit_report =
+        std::get_if<SubmissionReport>(&better_limit_result);
+
+    ASSERT_NE(peg_report, nullptr);
+    ASSERT_NE(better_limit_report, nullptr);
+    EXPECT_TRUE(better_limit_report->trades.empty());
+    EXPECT_TRUE(better_limit_report->cancelled_order_ids.empty());
+
+    const Order* peg_order = engine.find_order(peg_report->order_id);
+    const Order* better_limit = engine.find_order(
+        better_limit_report->order_id
+    );
+
+    ASSERT_NE(peg_order, nullptr);
+    ASSERT_NE(better_limit, nullptr);
+    ASSERT_TRUE(peg_order->price().has_value());
+    EXPECT_EQ(peg_order->price().value(), 10'50);
+    EXPECT_EQ(peg_order->sequence(), 4);
+    EXPECT_EQ(peg_order->status(), OrderStatus::Active);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), better_limit);
+}
+
+TEST(MatchingEngineTest, RepricesOfferPegAfterBetterSellLimitRests) {
+    MatchingEngine engine;
+
+    engine.submit_limit(Side::Sell, 11'00, 20);
+    const SubmissionResult peg_result = engine.submit_peg(
+        Side::Sell,
+        PegReference::Offer,
+        15
+    );
+    const SubmissionResult better_limit_result = engine.submit_limit(
+        Side::Sell,
+        10'50,
+        30
+    );
+
+    const SubmissionReport* peg_report =
+        std::get_if<SubmissionReport>(&peg_result);
+    const SubmissionReport* better_limit_report =
+        std::get_if<SubmissionReport>(&better_limit_result);
+
+    ASSERT_NE(peg_report, nullptr);
+    ASSERT_NE(better_limit_report, nullptr);
+    EXPECT_TRUE(better_limit_report->trades.empty());
+    EXPECT_TRUE(better_limit_report->cancelled_order_ids.empty());
+
+    const Order* peg_order = engine.find_order(peg_report->order_id);
+    const Order* better_limit = engine.find_order(
+        better_limit_report->order_id
+    );
+
+    ASSERT_NE(peg_order, nullptr);
+    ASSERT_NE(better_limit, nullptr);
+    ASSERT_TRUE(peg_order->price().has_value());
+    EXPECT_EQ(peg_order->price().value(), 10'50);
+    EXPECT_EQ(peg_order->sequence(), 4);
+    EXPECT_EQ(peg_order->status(), OrderStatus::Active);
+    EXPECT_EQ(engine.order_book().best(Side::Sell), better_limit);
+}
+
+TEST(MatchingEngineTest, KeepsPegPriorityWhenReferencePriceDoesNotChange) {
+    MatchingEngine engine;
+
+    engine.submit_limit(Side::Buy, 10'00, 20);
+    const SubmissionResult peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        15
+    );
+    const SubmissionResult worse_limit_result = engine.submit_limit(
+        Side::Buy,
+        9'50,
+        30
+    );
+
+    const SubmissionReport* peg_report =
+        std::get_if<SubmissionReport>(&peg_result);
+    const SubmissionReport* worse_limit_report =
+        std::get_if<SubmissionReport>(&worse_limit_result);
+
+    ASSERT_NE(peg_report, nullptr);
+    ASSERT_NE(worse_limit_report, nullptr);
+    EXPECT_TRUE(worse_limit_report->cancelled_order_ids.empty());
+
+    const Order* peg_order = engine.find_order(peg_report->order_id);
+
+    ASSERT_NE(peg_order, nullptr);
+    ASSERT_TRUE(peg_order->price().has_value());
+    EXPECT_EQ(peg_order->price().value(), 10'00);
+    EXPECT_EQ(peg_order->sequence(), 2);
+
+    const SubmissionResult next_limit_result = engine.submit_limit(
+        Side::Buy,
+        9'00,
+        10
+    );
+    const SubmissionReport* next_limit_report =
+        std::get_if<SubmissionReport>(&next_limit_result);
+
+    ASSERT_NE(next_limit_report, nullptr);
+
+    const Order* next_limit = engine.find_order(
+        next_limit_report->order_id
+    );
+
+    ASSERT_NE(next_limit, nullptr);
+    EXPECT_EQ(next_limit->sequence(), 4);
+}
+
+TEST(MatchingEngineTest, RepricesMultiplePegsInPreviousPriorityOrder) {
+    MatchingEngine engine;
+
+    engine.submit_limit(Side::Buy, 10'00, 10);
+    const SubmissionResult first_peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        10
+    );
+    const SubmissionResult second_peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        10
+    );
+    engine.submit_limit(Side::Buy, 10'50, 10);
+
+    const SubmissionReport* first_peg_report =
+        std::get_if<SubmissionReport>(&first_peg_result);
+    const SubmissionReport* second_peg_report =
+        std::get_if<SubmissionReport>(&second_peg_result);
+
+    ASSERT_NE(first_peg_report, nullptr);
+    ASSERT_NE(second_peg_report, nullptr);
+
+    const Order* first_peg = engine.find_order(
+        first_peg_report->order_id
+    );
+    const Order* second_peg = engine.find_order(
+        second_peg_report->order_id
+    );
+
+    ASSERT_NE(first_peg, nullptr);
+    ASSERT_NE(second_peg, nullptr);
+    ASSERT_TRUE(first_peg->price().has_value());
+    ASSERT_TRUE(second_peg->price().has_value());
+    EXPECT_EQ(first_peg->price().value(), 10'50);
+    EXPECT_EQ(second_peg->price().value(), 10'50);
+    EXPECT_EQ(first_peg->sequence(), 5);
+    EXPECT_EQ(second_peg->sequence(), 6);
+}
+
+TEST(MatchingEngineTest, RefreshesPegOnlyAfterMarketFinishesMatching) {
+    MatchingEngine engine;
+
+    const SubmissionResult best_limit_result = engine.submit_limit(
+        Side::Buy,
+        10'00,
+        10
+    );
+    const SubmissionResult peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        20
+    );
+    const SubmissionResult worse_limit_result = engine.submit_limit(
+        Side::Buy,
+        9'00,
+        20
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Sell,
+        15
+    );
+
+    const SubmissionReport* best_limit_report =
+        std::get_if<SubmissionReport>(&best_limit_result);
+    const SubmissionReport* peg_report =
+        std::get_if<SubmissionReport>(&peg_result);
+    const SubmissionReport* worse_limit_report =
+        std::get_if<SubmissionReport>(&worse_limit_result);
+    const SubmissionReport* market_report =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(best_limit_report, nullptr);
+    ASSERT_NE(peg_report, nullptr);
+    ASSERT_NE(worse_limit_report, nullptr);
+    ASSERT_NE(market_report, nullptr);
+    ASSERT_EQ(market_report->trades.size(), 2);
+    EXPECT_EQ(
+        market_report->trades[0].resting_order_id,
+        best_limit_report->order_id
+    );
+    EXPECT_EQ(market_report->trades[0].price, 10'00);
+    EXPECT_EQ(market_report->trades[0].quantity, 10);
+    EXPECT_EQ(
+        market_report->trades[1].resting_order_id,
+        peg_report->order_id
+    );
+    EXPECT_EQ(market_report->trades[1].price, 10'00);
+    EXPECT_EQ(market_report->trades[1].quantity, 5);
+    EXPECT_TRUE(market_report->cancelled_order_ids.empty());
+
+    const Order* peg_order = engine.find_order(peg_report->order_id);
+    const Order* worse_limit = engine.find_order(
+        worse_limit_report->order_id
+    );
+
+    ASSERT_NE(peg_order, nullptr);
+    ASSERT_NE(worse_limit, nullptr);
+    ASSERT_TRUE(peg_order->price().has_value());
+    EXPECT_EQ(peg_order->price().value(), 9'00);
+    EXPECT_EQ(peg_order->remaining_quantity(), 15);
+    EXPECT_EQ(peg_order->sequence(), 5);
+    EXPECT_EQ(peg_order->status(), OrderStatus::Active);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), worse_limit);
+}
+
+TEST(MatchingEngineTest, CancelsAllPegsWhenLastReferenceDisappears) {
+    MatchingEngine engine;
+
+    engine.submit_limit(Side::Buy, 10'00, 10);
+    const SubmissionResult first_peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        20
+    );
+    const SubmissionResult second_peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        30
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Sell,
+        10
+    );
+
+    const SubmissionReport* first_peg_report =
+        std::get_if<SubmissionReport>(&first_peg_result);
+    const SubmissionReport* second_peg_report =
+        std::get_if<SubmissionReport>(&second_peg_result);
+    const SubmissionReport* market_report =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(first_peg_report, nullptr);
+    ASSERT_NE(second_peg_report, nullptr);
+    ASSERT_NE(market_report, nullptr);
+    ASSERT_EQ(market_report->trades.size(), 1);
+    ASSERT_EQ(market_report->cancelled_order_ids.size(), 2);
+    EXPECT_EQ(
+        market_report->cancelled_order_ids[0],
+        first_peg_report->order_id
+    );
+    EXPECT_EQ(
+        market_report->cancelled_order_ids[1],
+        second_peg_report->order_id
+    );
+
+    const Order* first_peg = engine.find_order(
+        first_peg_report->order_id
+    );
+    const Order* second_peg = engine.find_order(
+        second_peg_report->order_id
+    );
+
+    ASSERT_NE(first_peg, nullptr);
+    ASSERT_NE(second_peg, nullptr);
+    EXPECT_EQ(first_peg->status(), OrderStatus::Cancelled);
+    EXPECT_EQ(first_peg->remaining_quantity(), 0);
+    EXPECT_EQ(second_peg->status(), OrderStatus::Cancelled);
+    EXPECT_EQ(second_peg->remaining_quantity(), 0);
+    EXPECT_TRUE(engine.order_book().empty());
+
+    const SubmissionResult new_reference_result = engine.submit_limit(
+        Side::Buy,
+        9'00,
+        10
+    );
+    const SubmissionReport* new_reference_report =
+        std::get_if<SubmissionReport>(&new_reference_result);
+
+    ASSERT_NE(new_reference_report, nullptr);
+    EXPECT_TRUE(new_reference_report->cancelled_order_ids.empty());
+    EXPECT_EQ(engine.order_book().size(), 1);
+    EXPECT_EQ(first_peg->status(), OrderStatus::Cancelled);
+    EXPECT_EQ(second_peg->status(), OrderStatus::Cancelled);
+}
+
+TEST(MatchingEngineTest, LimitSubmissionCancelsPegAfterConsumingReference) {
+    MatchingEngine engine;
+
+    const SubmissionResult reference_result = engine.submit_limit(
+        Side::Buy,
+        10'00,
+        10
+    );
+    const SubmissionResult peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        20
+    );
+    const SubmissionResult sell_result = engine.submit_limit(
+        Side::Sell,
+        10'00,
+        10
+    );
+
+    const SubmissionReport* reference_report =
+        std::get_if<SubmissionReport>(&reference_result);
+    const SubmissionReport* peg_report =
+        std::get_if<SubmissionReport>(&peg_result);
+    const SubmissionReport* sell_report =
+        std::get_if<SubmissionReport>(&sell_result);
+
+    ASSERT_NE(reference_report, nullptr);
+    ASSERT_NE(peg_report, nullptr);
+    ASSERT_NE(sell_report, nullptr);
+    ASSERT_EQ(sell_report->trades.size(), 1);
+    EXPECT_EQ(
+        sell_report->trades.front().resting_order_id,
+        reference_report->order_id
+    );
+    ASSERT_EQ(sell_report->cancelled_order_ids.size(), 1);
+    EXPECT_EQ(
+        sell_report->cancelled_order_ids.front(),
+        peg_report->order_id
+    );
+
+    const Order* peg_order = engine.find_order(peg_report->order_id);
+
+    ASSERT_NE(peg_order, nullptr);
+    EXPECT_EQ(peg_order->status(), OrderStatus::Cancelled);
+    EXPECT_EQ(peg_order->remaining_quantity(), 0);
+    EXPECT_TRUE(engine.order_book().empty());
+}
+
+TEST(MatchingEngineTest, RemovesFilledPegFromPegRegistry) {
+    MatchingEngine engine;
+
+    engine.submit_limit(Side::Buy, 10'00, 10);
+    const SubmissionResult peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        10
+    );
+    const SubmissionResult market_result = engine.submit_market(
+        Side::Sell,
+        20
+    );
+
+    const SubmissionReport* peg_report =
+        std::get_if<SubmissionReport>(&peg_result);
+    const SubmissionReport* market_report =
+        std::get_if<SubmissionReport>(&market_result);
+
+    ASSERT_NE(peg_report, nullptr);
+    ASSERT_NE(market_report, nullptr);
+    ASSERT_EQ(market_report->trades.size(), 2);
+    EXPECT_TRUE(market_report->cancelled_order_ids.empty());
+
+    const Order* peg_order = engine.find_order(peg_report->order_id);
+
+    ASSERT_NE(peg_order, nullptr);
+    EXPECT_EQ(peg_order->status(), OrderStatus::Filled);
+    EXPECT_EQ(peg_order->remaining_quantity(), 0);
+    EXPECT_TRUE(engine.order_book().empty());
+
+    const SubmissionResult new_reference_result = engine.submit_limit(
+        Side::Buy,
+        9'00,
+        10
+    );
+    const SubmissionReport* new_reference_report =
+        std::get_if<SubmissionReport>(&new_reference_result);
+
+    ASSERT_NE(new_reference_report, nullptr);
+    EXPECT_TRUE(new_reference_report->cancelled_order_ids.empty());
+    EXPECT_EQ(peg_order->status(), OrderStatus::Filled);
+    EXPECT_EQ(engine.order_book().size(), 1);
+}
+
 }  // namespace
 }  // namespace matching_engine

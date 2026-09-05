@@ -58,6 +58,13 @@ public:
 
 private:
     std::vector<Trade> match(Order& aggressive_order);
+
+    void refresh_all_pegs(std::vector<OrderId>& cancelled_order_ids);
+
+    void refresh_pegs(
+        PegReference peg_reference, std::vector<OrderId>& cancelled_order_ids
+    );
+
     std::unordered_map<OrderId, Order> orders_by_id_;
 
     std::unordered_set<OrderId> bid_pegs_;

@@ -33,13 +33,11 @@ SubmissionResult MatchingEngine::submit_limit(
     Price price,
     Quantity quantity
 ) {
-    if (price <= 0) {
+    if (price <= 0)
         return EngineError::InvalidPrice;
-    }
 
-    if (quantity <= 0) {
+    if (quantity <= 0)
         return EngineError::InvalidQuantity;
-    }
 
     const OrderId order_id = next_order_id_++;
     const Sequence sequence = next_sequence_++;
@@ -58,22 +56,24 @@ SubmissionResult MatchingEngine::submit_limit(
     Order& aggressive_order = order_iterator->second;
     std::vector<Trade> trades = match(aggressive_order);
 
+    std::vector<OrderId> cancelled_order_ids;
+
     if (aggressive_order.status() == OrderStatus::Active)
         order_book_.add(aggressive_order);
     
+    refresh_all_pegs(cancelled_order_ids);
     return SubmissionReport{
         order_id,
         trades,
-        {}
+        cancelled_order_ids
     };
 }
 
 SubmissionResult MatchingEngine::submit_market(
     Side side, Quantity quantity
 ) {
-    if (quantity <= 0) {
+    if (quantity <= 0)
         return EngineError::InvalidQuantity;
-    }
 
     const OrderId order_id = next_order_id_++;
     const Sequence sequence = next_sequence_++;
@@ -92,7 +92,7 @@ SubmissionResult MatchingEngine::submit_market(
         aggressive_order.cancel();
         cancelled_order_ids.push_back(order_id);
     }
-
+    refresh_all_pegs(cancelled_order_ids);
     return SubmissionReport{
         order_id,
         trades,
@@ -155,6 +155,83 @@ SubmissionResult MatchingEngine::submit_peg(
         {},
         {}
     };
+}
+
+void MatchingEngine::refresh_all_pegs(
+    std::vector<OrderId>& cancelled_order_ids
+) {
+    refresh_pegs(
+        PegReference::Bid,
+        cancelled_order_ids
+    );
+
+    refresh_pegs(
+        PegReference::Offer,
+        cancelled_order_ids
+    );
+}
+
+void MatchingEngine::refresh_pegs(
+    PegReference peg_reference,
+    std::vector<OrderId>& cancelled_order_ids
+) {
+    std::unordered_set<OrderId>& peg_ids =
+        peg_reference == PegReference::Bid
+            ? bid_pegs_
+            : offer_pegs_;
+
+    const Side reference_side =
+        peg_reference == PegReference::Bid
+            ? Side::Buy
+            : Side::Sell;
+
+    const std::optional<Price> reference_price =
+        order_book_.best_limit_price(reference_side);
+
+    std::vector<OrderId> ordered_peg_ids(
+        peg_ids.begin(),
+        peg_ids.end()
+    );
+
+    std::sort(
+        ordered_peg_ids.begin(),
+        ordered_peg_ids.end(),
+        [this](OrderId left_id, OrderId right_id) {
+            return orders_by_id_.at(left_id).sequence() <
+                   orders_by_id_.at(right_id).sequence();
+        }
+    );
+
+    for (OrderId order_id : ordered_peg_ids) {
+        Order& peg_order = orders_by_id_.at(order_id);
+
+        if (peg_order.status() != OrderStatus::Active) {
+            peg_ids.erase(order_id);
+            continue;
+        }
+
+        if (!reference_price.has_value()) {
+            order_book_.remove(order_id);
+            peg_order.cancel();
+
+            cancelled_order_ids.push_back(order_id);
+            peg_ids.erase(order_id);
+
+            continue;
+        }
+
+        if (peg_order.price().value() == reference_price.value())
+            continue;
+
+        order_book_.remove(order_id);
+
+        peg_order.apply_peg_reference(
+            reference_price.value(),
+            next_sequence_++
+        );
+
+        order_book_.add(peg_order);
+    }
 }
 
 std::vector<Trade> MatchingEngine::match(Order& aggressive_order) {
