@@ -56,16 +56,16 @@ SubmissionResult MatchingEngine::submit_limit(
     Order& aggressive_order = order_iterator->second;
     std::vector<Trade> trades = match(aggressive_order);
 
-    std::vector<OrderId> cancelled_order_ids;
+    std::vector<Cancellation> cancellations;
 
     if (aggressive_order.status() == OrderStatus::Active)
         order_book_.add(aggressive_order);
     
-    refresh_all_pegs(cancelled_order_ids);
+    refresh_all_pegs(cancellations);
     return SubmissionReport{
         order_id,
         trades,
-        cancelled_order_ids
+        cancellations
     };
 }
 
@@ -86,17 +86,26 @@ SubmissionResult MatchingEngine::submit_market(
     Order& aggressive_order = order_iterator->second;
 
     std::vector<Trade> trades = match(aggressive_order);
-    std::vector<OrderId> cancelled_order_ids;
+    std::vector<Cancellation> cancellations;
 
     if (aggressive_order.status() == OrderStatus::Active) {
+        const Quantity cancelled_quantity =
+            aggressive_order.remaining_quantity();
+
         aggressive_order.cancel();
-        cancelled_order_ids.push_back(order_id);
+        cancellations.push_back(
+            Cancellation{
+                order_id,
+                cancelled_quantity,
+                CancellationReason::MarketRemainder
+            }
+        );
     }
-    refresh_all_pegs(cancelled_order_ids);
+    refresh_all_pegs(cancellations);
     return SubmissionReport{
         order_id,
         trades,
-        cancelled_order_ids
+        cancellations
     };
 }
 
@@ -180,17 +189,23 @@ CancellationResult MatchingEngine::cancel_order(OrderId order_id) {
             offer_pegs_.erase(order_id);
     }
 
+    const Quantity cancelled_quantity = order.remaining_quantity();
+
     order.cancel();
 
-    std::vector<OrderId> cancelled_order_ids{
-        order_id
+    std::vector<Cancellation> cancellations{
+        Cancellation{
+            order_id,
+            cancelled_quantity,
+            CancellationReason::UserRequested
+        }
     };
 
-    refresh_all_pegs(cancelled_order_ids);
+    refresh_all_pegs(cancellations);
 
     return CancellationReport{
         order_id,
-        cancelled_order_ids
+        cancellations
     };
 }
 
@@ -198,51 +213,44 @@ AmendmentResult MatchingEngine::amend_quantity(
     OrderId order_id,
     Quantity new_remaining_quantity
 ) {
-    if (new_remaining_quantity <= 0)
-        return EngineError::InvalidQuantity;
-
-    const auto order_iterator = orders_by_id_.find(order_id);
-
-    if (order_iterator == orders_by_id_.end())
-        return EngineError::OrderNotFound;
-
-    Order& order = order_iterator->second;
-
-    if (order.status() != OrderStatus::Active)
-        return EngineError::OrderNotOpen;
-
-    const bool loses_priority =
-        new_remaining_quantity > order.remaining_quantity();
-
-    if (loses_priority) {
-        order_book_.remove(order_id);
-
-        order.apply_quantity_amendment(
-            new_remaining_quantity,
-            next_sequence_++
-        );
-
-        order_book_.add(order);
-    } else {
-        order.apply_quantity_amendment(
-            new_remaining_quantity,
-            order.sequence()
-        );
-    }
-
-    return AmendmentReport{
+    return amend_order(
         order_id,
-        {},
-        {}
-    };
+        AmendmentRequest{
+            std::nullopt,
+            new_remaining_quantity
+        }
+    );
 }
 
 AmendmentResult MatchingEngine::amend_price(
     OrderId order_id,
     Price new_price
 ) {
-    if (new_price <= 0)
+    return amend_order(
+        order_id,
+        AmendmentRequest{
+            new_price,
+            std::nullopt
+        }
+    );
+}
+
+AmendmentResult MatchingEngine::amend_order(
+    OrderId order_id,
+    const AmendmentRequest& request
+) {
+    if (!request.price.has_value() &&
+        !request.remaining_quantity.has_value()) {
+        return EngineError::EmptyAmendment;
+    }
+
+    if (request.price.has_value() && request.price.value() <= 0)
         return EngineError::InvalidPrice;
+
+    if (request.remaining_quantity.has_value() &&
+        request.remaining_quantity.value() <= 0) {
+        return EngineError::InvalidQuantity;
+    }
 
     const auto order_iterator = orders_by_id_.find(order_id);
 
@@ -254,10 +262,41 @@ AmendmentResult MatchingEngine::amend_price(
     if (order.status() != OrderStatus::Active)
         return EngineError::OrderNotOpen;
 
-    if (order.type() != OrderType::Limit || order.is_pegged())
+    if (request.price.has_value() &&
+        (order.type() != OrderType::Limit || order.is_pegged())) {
         return EngineError::UnsupportedAmendment;
+    }
 
-    if (order.price().value() == new_price) {
+    const bool price_changes =
+        request.price.has_value() &&
+        request.price.value() != order.price().value();
+
+    const Quantity new_remaining_quantity =
+        request.remaining_quantity.value_or(
+            order.remaining_quantity()
+        );
+
+    const bool quantity_changes =
+        new_remaining_quantity != order.remaining_quantity();
+
+    if (!price_changes && !quantity_changes) {
+        return AmendmentReport{
+            order_id,
+            {},
+            {}
+        };
+    }
+
+    const bool loses_priority =
+        price_changes ||
+        new_remaining_quantity > order.remaining_quantity();
+
+    if (!loses_priority) {
+        order.apply_quantity_amendment(
+            new_remaining_quantity,
+            order.sequence()
+        );
+
         return AmendmentReport{
             order_id,
             {},
@@ -267,43 +306,64 @@ AmendmentResult MatchingEngine::amend_price(
 
     order_book_.remove(order_id);
 
-    order.apply_price_amendment(
-        new_price,
-        next_sequence_++
-    );
+    const Sequence new_sequence = next_sequence_++;
+
+    if (request.remaining_quantity.has_value()) {
+        order.apply_quantity_amendment(
+            new_remaining_quantity,
+            new_sequence
+        );
+    }
+
+    if (price_changes) {
+        order.apply_price_amendment(
+            request.price.value(),
+            new_sequence
+        );
+    }
+
+    if (!price_changes) {
+        order_book_.add(order);
+
+        return AmendmentReport{
+            order_id,
+            {},
+            {}
+        };
+    }
 
     std::vector<Trade> trades = match(order);
 
     if (order.status() == OrderStatus::Active)
         order_book_.add(order);
 
-    std::vector<OrderId> cancelled_order_ids;
-    refresh_all_pegs(cancelled_order_ids);
+    std::vector<Cancellation> cancellations;
+    refresh_all_pegs(cancellations);
 
     return AmendmentReport{
         order_id,
         trades,
-        cancelled_order_ids
+        cancellations
     };
 }
 
 void MatchingEngine::refresh_all_pegs(
-    std::vector<OrderId>& cancelled_order_ids
+    std::vector<Cancellation>& cancellations
 ) {
     refresh_pegs(
         PegReference::Bid,
-        cancelled_order_ids
+        cancellations
     );
 
     refresh_pegs(
         PegReference::Offer,
-        cancelled_order_ids
+        cancellations
     );
 }
 
 void MatchingEngine::refresh_pegs(
     PegReference peg_reference,
-    std::vector<OrderId>& cancelled_order_ids
+    std::vector<Cancellation>& cancellations
 ) {
     std::unordered_set<OrderId>& peg_ids =
         peg_reference == PegReference::Bid
@@ -342,9 +402,19 @@ void MatchingEngine::refresh_pegs(
 
         if (!reference_price.has_value()) {
             order_book_.remove(order_id);
+
+            const Quantity cancelled_quantity =
+                peg_order.remaining_quantity();
+
             peg_order.cancel();
 
-            cancelled_order_ids.push_back(order_id);
+            cancellations.push_back(
+                Cancellation{
+                    order_id,
+                    cancelled_quantity,
+                    CancellationReason::PegReferenceUnavailable
+                }
+            );
             peg_ids.erase(order_id);
 
             continue;

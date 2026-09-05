@@ -52,7 +52,7 @@ TEST(MatchingEngineTest, AcceptsLimitOrderAndRestsItInEmptyBook) {
     ASSERT_NE(report, nullptr);
     EXPECT_EQ(report->order_id, 1);
     EXPECT_TRUE(report->trades.empty());
-    EXPECT_TRUE(report->cancelled_order_ids.empty());
+    EXPECT_TRUE(report->cancellations.empty());
 
     EXPECT_EQ(engine.order_count(), 1);
 
@@ -512,8 +512,13 @@ TEST(MatchingEngineTest, CancelsMarketOrderWhenBookIsEmpty) {
     ASSERT_NE(report, nullptr);
     EXPECT_EQ(report->order_id, 1);
     EXPECT_TRUE(report->trades.empty());
-    ASSERT_EQ(report->cancelled_order_ids.size(), 1);
-    EXPECT_EQ(report->cancelled_order_ids.front(), report->order_id);
+    ASSERT_EQ(report->cancellations.size(), 1);
+    EXPECT_EQ(report->cancellations.front().order_id, report->order_id);
+    EXPECT_EQ(report->cancellations.front().quantity, 50);
+    EXPECT_EQ(
+        report->cancellations.front().reason,
+        CancellationReason::MarketRemainder
+    );
 
     const Order* market_order = engine.find_order(report->order_id);
 
@@ -551,7 +556,7 @@ TEST(MatchingEngineTest, FullyFillsMarketOrderAgainstRestingLiquidity) {
     EXPECT_EQ(market->trades.front().aggressive_order_id, market->order_id);
     EXPECT_EQ(market->trades.front().price, 10'25);
     EXPECT_EQ(market->trades.front().quantity, 30);
-    EXPECT_TRUE(market->cancelled_order_ids.empty());
+    EXPECT_TRUE(market->cancellations.empty());
 
     const Order* sell_order = engine.find_order(sell->order_id);
     const Order* market_order = engine.find_order(market->order_id);
@@ -585,8 +590,13 @@ TEST(MatchingEngineTest, CancelsUnfilledMarketRemainderAfterPartialFill) {
     ASSERT_NE(market, nullptr);
     ASSERT_EQ(market->trades.size(), 1);
     EXPECT_EQ(market->trades.front().quantity, 15);
-    ASSERT_EQ(market->cancelled_order_ids.size(), 1);
-    EXPECT_EQ(market->cancelled_order_ids.front(), market->order_id);
+    ASSERT_EQ(market->cancellations.size(), 1);
+    EXPECT_EQ(market->cancellations.front().order_id, market->order_id);
+    EXPECT_EQ(market->cancellations.front().quantity, 25);
+    EXPECT_EQ(
+        market->cancellations.front().reason,
+        CancellationReason::MarketRemainder
+    );
 
     const Order* sell_order = engine.find_order(sell->order_id);
     const Order* market_order = engine.find_order(market->order_id);
@@ -640,7 +650,7 @@ TEST(MatchingEngineTest, MarketBuyConsumesMultipleSellPricesInPriorityOrder) {
     );
     EXPECT_EQ(market->trades[1].price, 15'00);
     EXPECT_EQ(market->trades[1].quantity, 5);
-    EXPECT_TRUE(market->cancelled_order_ids.empty());
+    EXPECT_TRUE(market->cancellations.empty());
 
     const Order* remaining_sell =
         engine.find_order(worse_sell->order_id);
@@ -698,7 +708,7 @@ TEST(MatchingEngineTest, MarketSellConsumesBestBuyFirst) {
     );
     EXPECT_EQ(market->trades[1].price, 10'00);
     EXPECT_EQ(market->trades[1].quantity, 5);
-    EXPECT_TRUE(market->cancelled_order_ids.empty());
+    EXPECT_TRUE(market->cancellations.empty());
 
     const Order* remaining_buy =
         engine.find_order(worse_buy->order_id);
@@ -731,8 +741,8 @@ TEST(MatchingEngineTest, MarketOrderDoesNotMatchSameSideLiquidity) {
     ASSERT_NE(limit, nullptr);
     ASSERT_NE(market, nullptr);
     EXPECT_TRUE(market->trades.empty());
-    ASSERT_EQ(market->cancelled_order_ids.size(), 1);
-    EXPECT_EQ(market->cancelled_order_ids.front(), market->order_id);
+    ASSERT_EQ(market->cancellations.size(), 1);
+    EXPECT_EQ(market->cancellations.front().order_id, market->order_id);
 
     const Order* limit_order = engine.find_order(limit->order_id);
     const Order* market_order = engine.find_order(market->order_id);
@@ -851,7 +861,7 @@ TEST(MatchingEngineTest, AcceptsBidPegAtBestRegularBuyPrice) {
     ASSERT_NE(peg_report, nullptr);
     EXPECT_EQ(peg_report->order_id, 3);
     EXPECT_TRUE(peg_report->trades.empty());
-    EXPECT_TRUE(peg_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(peg_report->cancellations.empty());
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
 
@@ -892,7 +902,7 @@ TEST(MatchingEngineTest, AcceptsOfferPegAtBestRegularSellPrice) {
     ASSERT_NE(peg_report, nullptr);
     EXPECT_EQ(peg_report->order_id, 3);
     EXPECT_TRUE(peg_report->trades.empty());
-    EXPECT_TRUE(peg_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(peg_report->cancellations.empty());
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
 
@@ -939,7 +949,7 @@ TEST(MatchingEngineTest, RepricesBidPegAfterBetterBuyLimitRests) {
     ASSERT_NE(peg_report, nullptr);
     ASSERT_NE(better_limit_report, nullptr);
     EXPECT_TRUE(better_limit_report->trades.empty());
-    EXPECT_TRUE(better_limit_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(better_limit_report->cancellations.empty());
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
     const Order* better_limit = engine.find_order(
@@ -978,7 +988,7 @@ TEST(MatchingEngineTest, RepricesOfferPegAfterBetterSellLimitRests) {
     ASSERT_NE(peg_report, nullptr);
     ASSERT_NE(better_limit_report, nullptr);
     EXPECT_TRUE(better_limit_report->trades.empty());
-    EXPECT_TRUE(better_limit_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(better_limit_report->cancellations.empty());
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
     const Order* better_limit = engine.find_order(
@@ -1059,7 +1069,7 @@ TEST(MatchingEngineTest, KeepsPegPriorityWhenReferencePriceDoesNotChange) {
 
     ASSERT_NE(peg_report, nullptr);
     ASSERT_NE(worse_limit_report, nullptr);
-    EXPECT_TRUE(worse_limit_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(worse_limit_report->cancellations.empty());
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
 
@@ -1176,7 +1186,7 @@ TEST(MatchingEngineTest, RefreshesPegOnlyAfterMarketFinishesMatching) {
     );
     EXPECT_EQ(market_report->trades[1].price, 10'00);
     EXPECT_EQ(market_report->trades[1].quantity, 5);
-    EXPECT_TRUE(market_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(market_report->cancellations.empty());
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
     const Order* worse_limit = engine.find_order(
@@ -1223,13 +1233,13 @@ TEST(MatchingEngineTest, CancelsAllPegsWhenLastReferenceDisappears) {
     ASSERT_NE(second_peg_report, nullptr);
     ASSERT_NE(market_report, nullptr);
     ASSERT_EQ(market_report->trades.size(), 1);
-    ASSERT_EQ(market_report->cancelled_order_ids.size(), 2);
+    ASSERT_EQ(market_report->cancellations.size(), 2);
     EXPECT_EQ(
-        market_report->cancelled_order_ids[0],
+        market_report->cancellations[0].order_id,
         first_peg_report->order_id
     );
     EXPECT_EQ(
-        market_report->cancelled_order_ids[1],
+        market_report->cancellations[1].order_id,
         second_peg_report->order_id
     );
 
@@ -1257,7 +1267,7 @@ TEST(MatchingEngineTest, CancelsAllPegsWhenLastReferenceDisappears) {
         std::get_if<SubmissionReport>(&new_reference_result);
 
     ASSERT_NE(new_reference_report, nullptr);
-    EXPECT_TRUE(new_reference_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(new_reference_report->cancellations.empty());
     EXPECT_EQ(engine.order_book().size(), 1);
     EXPECT_EQ(first_peg->status(), OrderStatus::Cancelled);
     EXPECT_EQ(second_peg->status(), OrderStatus::Cancelled);
@@ -1297,9 +1307,9 @@ TEST(MatchingEngineTest, LimitSubmissionCancelsPegAfterConsumingReference) {
         sell_report->trades.front().resting_order_id,
         reference_report->order_id
     );
-    ASSERT_EQ(sell_report->cancelled_order_ids.size(), 1);
+    ASSERT_EQ(sell_report->cancellations.size(), 1);
     EXPECT_EQ(
-        sell_report->cancelled_order_ids.front(),
+        sell_report->cancellations.front().order_id,
         peg_report->order_id
     );
 
@@ -1333,7 +1343,7 @@ TEST(MatchingEngineTest, RemovesFilledPegFromPegRegistry) {
     ASSERT_NE(peg_report, nullptr);
     ASSERT_NE(market_report, nullptr);
     ASSERT_EQ(market_report->trades.size(), 2);
-    EXPECT_TRUE(market_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(market_report->cancellations.empty());
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
 
@@ -1351,7 +1361,7 @@ TEST(MatchingEngineTest, RemovesFilledPegFromPegRegistry) {
         std::get_if<SubmissionReport>(&new_reference_result);
 
     ASSERT_NE(new_reference_report, nullptr);
-    EXPECT_TRUE(new_reference_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(new_reference_report->cancellations.empty());
     EXPECT_EQ(peg_order->status(), OrderStatus::Filled);
     EXPECT_EQ(engine.order_book().size(), 1);
 }
@@ -1394,10 +1404,15 @@ TEST(MatchingEngineTest, CancelsActiveLimitOrder) {
         cancellation_report->order_id,
         submission_report->order_id
     );
-    ASSERT_EQ(cancellation_report->cancelled_order_ids.size(), 1);
+    ASSERT_EQ(cancellation_report->cancellations.size(), 1);
     EXPECT_EQ(
-        cancellation_report->cancelled_order_ids.front(),
+        cancellation_report->cancellations.front().order_id,
         submission_report->order_id
+    );
+    EXPECT_EQ(cancellation_report->cancellations.front().quantity, 25);
+    EXPECT_EQ(
+        cancellation_report->cancellations.front().reason,
+        CancellationReason::UserRequested
     );
 
     const Order* order = engine.find_order(submission_report->order_id);
@@ -1495,9 +1510,9 @@ TEST(MatchingEngineTest, CancelsPegWithoutReactivatingIt) {
         std::get_if<CancellationReport>(&cancellation);
 
     ASSERT_NE(cancellation_report, nullptr);
-    ASSERT_EQ(cancellation_report->cancelled_order_ids.size(), 1);
+    ASSERT_EQ(cancellation_report->cancellations.size(), 1);
     EXPECT_EQ(
-        cancellation_report->cancelled_order_ids.front(),
+        cancellation_report->cancellations.front().order_id,
         peg_report->order_id
     );
 
@@ -1517,7 +1532,7 @@ TEST(MatchingEngineTest, CancelsPegWithoutReactivatingIt) {
         std::get_if<SubmissionReport>(&better_reference_result);
 
     ASSERT_NE(better_reference_report, nullptr);
-    EXPECT_TRUE(better_reference_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(better_reference_report->cancellations.empty());
     EXPECT_EQ(peg_order->status(), OrderStatus::Cancelled);
     EXPECT_EQ(engine.order_book().size(), 2);
 }
@@ -1559,9 +1574,9 @@ TEST(MatchingEngineTest, RepricesPegAfterBestReferenceIsCancelled) {
         std::get_if<CancellationReport>(&cancellation);
 
     ASSERT_NE(cancellation_report, nullptr);
-    ASSERT_EQ(cancellation_report->cancelled_order_ids.size(), 1);
+    ASSERT_EQ(cancellation_report->cancellations.size(), 1);
     EXPECT_EQ(
-        cancellation_report->cancelled_order_ids.front(),
+        cancellation_report->cancellations.front().order_id,
         best_reference_report->order_id
     );
 
@@ -1616,18 +1631,30 @@ TEST(MatchingEngineTest, CancelsDependentPegsWithLastReference) {
         std::get_if<CancellationReport>(&cancellation);
 
     ASSERT_NE(cancellation_report, nullptr);
-    ASSERT_EQ(cancellation_report->cancelled_order_ids.size(), 3);
+    ASSERT_EQ(cancellation_report->cancellations.size(), 3);
     EXPECT_EQ(
-        cancellation_report->cancelled_order_ids[0],
+        cancellation_report->cancellations[0].order_id,
         reference_report->order_id
     );
     EXPECT_EQ(
-        cancellation_report->cancelled_order_ids[1],
+        cancellation_report->cancellations[1].order_id,
         first_peg_report->order_id
     );
     EXPECT_EQ(
-        cancellation_report->cancelled_order_ids[2],
+        cancellation_report->cancellations[2].order_id,
         second_peg_report->order_id
+    );
+    EXPECT_EQ(
+        cancellation_report->cancellations[0].reason,
+        CancellationReason::UserRequested
+    );
+    EXPECT_EQ(
+        cancellation_report->cancellations[1].reason,
+        CancellationReason::PegReferenceUnavailable
+    );
+    EXPECT_EQ(
+        cancellation_report->cancellations[2].reason,
+        CancellationReason::PegReferenceUnavailable
     );
 
     const Order* reference = engine.find_order(
@@ -1679,7 +1706,7 @@ TEST(MatchingEngineTest, KeepsPegPriorityAfterUnrelatedCancellation) {
         std::get_if<CancellationReport>(&cancellation);
 
     ASSERT_NE(cancellation_report, nullptr);
-    ASSERT_EQ(cancellation_report->cancelled_order_ids.size(), 1);
+    ASSERT_EQ(cancellation_report->cancellations.size(), 1);
 
     const Order* peg_order = engine.find_order(peg_report->order_id);
 
@@ -1821,7 +1848,7 @@ TEST(MatchingEngineTest, ReducesQuantityWithoutLosingPriority) {
     ASSERT_NE(amendment_report, nullptr);
     EXPECT_EQ(amendment_report->order_id, first_sell_report->order_id);
     EXPECT_TRUE(amendment_report->trades.empty());
-    EXPECT_TRUE(amendment_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(amendment_report->cancellations.empty());
 
     const Order* first_sell = engine.find_order(
         first_sell_report->order_id
@@ -1884,7 +1911,7 @@ TEST(MatchingEngineTest, IncreasesQuantityAndLosesPriority) {
 
     ASSERT_NE(amendment_report, nullptr);
     EXPECT_TRUE(amendment_report->trades.empty());
-    EXPECT_TRUE(amendment_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(amendment_report->cancellations.empty());
 
     const Order* first_sell = engine.find_order(
         first_sell_report->order_id
@@ -2376,7 +2403,7 @@ TEST(MatchingEngineTest, PriceAmendmentRefreshesPegAfterMatching) {
 
     ASSERT_NE(amendment_report, nullptr);
     EXPECT_TRUE(amendment_report->trades.empty());
-    EXPECT_TRUE(amendment_report->cancelled_order_ids.empty());
+    EXPECT_TRUE(amendment_report->cancellations.empty());
 
     const Order* peg = engine.find_order(peg_report->order_id);
 
@@ -2419,10 +2446,15 @@ TEST(MatchingEngineTest, PriceAmendmentCancelsPegWithoutReference) {
 
     ASSERT_NE(amendment_report, nullptr);
     ASSERT_EQ(amendment_report->trades.size(), 1);
-    ASSERT_EQ(amendment_report->cancelled_order_ids.size(), 1);
+    ASSERT_EQ(amendment_report->cancellations.size(), 1);
     EXPECT_EQ(
-        amendment_report->cancelled_order_ids[0],
+        amendment_report->cancellations[0].order_id,
         peg_report->order_id
+    );
+    EXPECT_EQ(amendment_report->cancellations[0].quantity, 20);
+    EXPECT_EQ(
+        amendment_report->cancellations[0].reason,
+        CancellationReason::PegReferenceUnavailable
     );
 
     const Order* bid = engine.find_order(bid_report->order_id);
@@ -2434,6 +2466,89 @@ TEST(MatchingEngineTest, PriceAmendmentCancelsPegWithoutReference) {
     EXPECT_EQ(peg->status(), OrderStatus::Cancelled);
     EXPECT_EQ(peg->remaining_quantity(), 0);
     EXPECT_TRUE(engine.order_book().empty());
+}
+
+TEST(MatchingEngineTest, RejectsEmptyAmendment) {
+    MatchingEngine engine;
+
+    const SubmissionResult submission = engine.submit_limit(
+        Side::Buy,
+        10'00,
+        20
+    );
+    const SubmissionReport* report =
+        std::get_if<SubmissionReport>(&submission);
+
+    ASSERT_NE(report, nullptr);
+
+    const AmendmentResult amendment = engine.amend_order(
+        report->order_id,
+        AmendmentRequest{
+            std::nullopt,
+            std::nullopt
+        }
+    );
+
+    ASSERT_TRUE(std::holds_alternative<EngineError>(amendment));
+    EXPECT_EQ(
+        std::get<EngineError>(amendment),
+        EngineError::EmptyAmendment
+    );
+}
+
+TEST(MatchingEngineTest, AppliesPriceAndQuantityBeforeMatching) {
+    MatchingEngine engine;
+
+    const SubmissionResult sell_result = engine.submit_limit(
+        Side::Sell,
+        10'00,
+        150
+    );
+    const SubmissionResult buy_result = engine.submit_limit(
+        Side::Buy,
+        9'00,
+        100
+    );
+    const SubmissionReport* sell_report =
+        std::get_if<SubmissionReport>(&sell_result);
+    const SubmissionReport* buy_report =
+        std::get_if<SubmissionReport>(&buy_result);
+
+    ASSERT_NE(sell_report, nullptr);
+    ASSERT_NE(buy_report, nullptr);
+
+    const AmendmentResult amendment = engine.amend_order(
+        buy_report->order_id,
+        AmendmentRequest{
+            10'00,
+            200
+        }
+    );
+    const AmendmentReport* amendment_report =
+        std::get_if<AmendmentReport>(&amendment);
+
+    ASSERT_NE(amendment_report, nullptr);
+    ASSERT_EQ(amendment_report->trades.size(), 1);
+    EXPECT_EQ(
+        amendment_report->trades.front().resting_order_id,
+        sell_report->order_id
+    );
+    EXPECT_EQ(amendment_report->trades.front().price, 10'00);
+    EXPECT_EQ(amendment_report->trades.front().quantity, 150);
+
+    const Order* buy = engine.find_order(buy_report->order_id);
+    const Order* sell = engine.find_order(sell_report->order_id);
+
+    ASSERT_NE(buy, nullptr);
+    ASSERT_NE(sell, nullptr);
+    ASSERT_TRUE(buy->price().has_value());
+    EXPECT_EQ(buy->price().value(), 10'00);
+    EXPECT_EQ(buy->remaining_quantity(), 50);
+    EXPECT_EQ(buy->original_quantity(), 100);
+    EXPECT_EQ(buy->sequence(), 3);
+    EXPECT_EQ(buy->status(), OrderStatus::Active);
+    EXPECT_EQ(sell->status(), OrderStatus::Filled);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), buy);
 }
 
 }  // namespace

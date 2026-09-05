@@ -3,6 +3,7 @@
 #include "matching_engine/order.hpp"
 #include "matching_engine/order_book.hpp"
 
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -17,7 +18,8 @@ enum class EngineError {
     PegReferenceUnavailable,
     OrderNotFound,
     OrderNotOpen,
-    UnsupportedAmendment
+    UnsupportedAmendment,
+    EmptyAmendment
 };
 
 struct Trade {
@@ -27,10 +29,22 @@ struct Trade {
     Quantity quantity;
 };
 
+enum class CancellationReason {
+    UserRequested,
+    MarketRemainder,
+    PegReferenceUnavailable
+};
+
+struct Cancellation {
+    OrderId order_id;
+    Quantity quantity;
+    CancellationReason reason;
+};
+
 struct SubmissionReport {
     OrderId order_id;
     std::vector<Trade> trades;
-    std::vector<OrderId> cancelled_order_ids;
+    std::vector<Cancellation> cancellations;
 };
 
 using SubmissionResult =
@@ -38,7 +52,7 @@ using SubmissionResult =
 
 struct CancellationReport {
     OrderId order_id;
-    std::vector<OrderId> cancelled_order_ids;
+    std::vector<Cancellation> cancellations;
 };
 
 using CancellationResult = std::variant<CancellationReport, EngineError>;
@@ -47,6 +61,11 @@ using AmendmentReport = SubmissionReport;
 
 using AmendmentResult =
     std::variant<AmendmentReport, EngineError>;
+
+struct AmendmentRequest {
+    std::optional<Price> price;
+    std::optional<Quantity> remaining_quantity;
+};
 
 class MatchingEngine {
 public:
@@ -76,6 +95,11 @@ public:
         Price new_price
     );
 
+    AmendmentResult amend_order(
+        OrderId order_id,
+        const AmendmentRequest& request
+    );
+
     const Order* find_order(OrderId id) const;
     const OrderBook& order_book() const;
 
@@ -84,10 +108,11 @@ public:
 private:
     std::vector<Trade> match(Order& aggressive_order);
 
-    void refresh_all_pegs(std::vector<OrderId>& cancelled_order_ids);
+    void refresh_all_pegs(std::vector<Cancellation>& cancellations);
 
     void refresh_pegs(
-        PegReference peg_reference, std::vector<OrderId>& cancelled_order_ids
+        PegReference peg_reference,
+        std::vector<Cancellation>& cancellations
     );
 
     std::unordered_map<OrderId, Order> orders_by_id_;
