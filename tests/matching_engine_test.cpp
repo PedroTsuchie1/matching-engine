@@ -950,9 +950,9 @@ TEST(MatchingEngineTest, RepricesBidPegAfterBetterBuyLimitRests) {
     ASSERT_NE(better_limit, nullptr);
     ASSERT_TRUE(peg_order->price().has_value());
     EXPECT_EQ(peg_order->price().value(), 10'50);
-    EXPECT_EQ(peg_order->sequence(), 4);
+    EXPECT_EQ(peg_order->sequence(), 2);
     EXPECT_EQ(peg_order->status(), OrderStatus::Active);
-    EXPECT_EQ(engine.order_book().best(Side::Buy), better_limit);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), peg_order);
 }
 
 TEST(MatchingEngineTest, RepricesOfferPegAfterBetterSellLimitRests) {
@@ -989,9 +989,52 @@ TEST(MatchingEngineTest, RepricesOfferPegAfterBetterSellLimitRests) {
     ASSERT_NE(better_limit, nullptr);
     ASSERT_TRUE(peg_order->price().has_value());
     EXPECT_EQ(peg_order->price().value(), 10'50);
-    EXPECT_EQ(peg_order->sequence(), 4);
+    EXPECT_EQ(peg_order->sequence(), 2);
     EXPECT_EQ(peg_order->status(), OrderStatus::Active);
-    EXPECT_EQ(engine.order_book().best(Side::Sell), better_limit);
+    EXPECT_EQ(engine.order_book().best(Side::Sell), peg_order);
+}
+
+TEST(MatchingEngineTest, PreservesPegPriorityInAssignmentRepricingExample) {
+    MatchingEngine engine;
+
+    engine.submit_limit(Side::Buy, 10'00, 200);
+    engine.submit_limit(Side::Buy, 9'99, 100);
+    engine.submit_limit(Side::Sell, 10'50, 100);
+
+    const SubmissionResult peg_result = engine.submit_peg(
+        Side::Buy,
+        PegReference::Bid,
+        150
+    );
+    const SubmissionResult better_limit_result = engine.submit_limit(
+        Side::Buy,
+        10'10,
+        300
+    );
+
+    const SubmissionReport* peg_report =
+        std::get_if<SubmissionReport>(&peg_result);
+    const SubmissionReport* better_limit_report =
+        std::get_if<SubmissionReport>(&better_limit_result);
+
+    ASSERT_NE(peg_report, nullptr);
+    ASSERT_NE(better_limit_report, nullptr);
+
+    const OrderBookSnapshot snapshot = engine.order_book().snapshot();
+
+    ASSERT_FALSE(snapshot.buys.empty());
+    ASSERT_EQ(snapshot.buys.front().price, 10'10);
+    ASSERT_EQ(snapshot.buys.front().orders.size(), 2);
+    EXPECT_EQ(
+        snapshot.buys.front().orders[0].order_id,
+        peg_report->order_id
+    );
+    EXPECT_EQ(snapshot.buys.front().orders[0].remaining_quantity, 150);
+    EXPECT_EQ(
+        snapshot.buys.front().orders[1].order_id,
+        better_limit_report->order_id
+    );
+    EXPECT_EQ(snapshot.buys.front().orders[1].remaining_quantity, 300);
 }
 
 TEST(MatchingEngineTest, KeepsPegPriorityWhenReferencePriceDoesNotChange) {
@@ -1080,8 +1123,8 @@ TEST(MatchingEngineTest, RepricesMultiplePegsInPreviousPriorityOrder) {
     ASSERT_TRUE(second_peg->price().has_value());
     EXPECT_EQ(first_peg->price().value(), 10'50);
     EXPECT_EQ(second_peg->price().value(), 10'50);
-    EXPECT_EQ(first_peg->sequence(), 5);
-    EXPECT_EQ(second_peg->sequence(), 6);
+    EXPECT_EQ(first_peg->sequence(), 2);
+    EXPECT_EQ(second_peg->sequence(), 3);
 }
 
 TEST(MatchingEngineTest, RefreshesPegOnlyAfterMarketFinishesMatching) {
@@ -1145,9 +1188,9 @@ TEST(MatchingEngineTest, RefreshesPegOnlyAfterMarketFinishesMatching) {
     ASSERT_TRUE(peg_order->price().has_value());
     EXPECT_EQ(peg_order->price().value(), 9'00);
     EXPECT_EQ(peg_order->remaining_quantity(), 15);
-    EXPECT_EQ(peg_order->sequence(), 5);
+    EXPECT_EQ(peg_order->sequence(), 2);
     EXPECT_EQ(peg_order->status(), OrderStatus::Active);
-    EXPECT_EQ(engine.order_book().best(Side::Buy), worse_limit);
+    EXPECT_EQ(engine.order_book().best(Side::Buy), peg_order);
 }
 
 TEST(MatchingEngineTest, CancelsAllPegsWhenLastReferenceDisappears) {
@@ -1531,7 +1574,7 @@ TEST(MatchingEngineTest, RepricesPegAfterBestReferenceIsCancelled) {
     ASSERT_NE(worse_reference, nullptr);
     ASSERT_TRUE(peg_order->price().has_value());
     EXPECT_EQ(peg_order->price().value(), 9'00);
-    EXPECT_EQ(peg_order->sequence(), 4);
+    EXPECT_EQ(peg_order->sequence(), 3);
     EXPECT_EQ(peg_order->status(), OrderStatus::Active);
     EXPECT_EQ(engine.order_book().best(Side::Buy), worse_reference);
 }
@@ -1996,7 +2039,7 @@ TEST(MatchingEngineTest, AmendsPegQuantityWithoutLosingRegistration) {
     ASSERT_TRUE(peg_after_repricing->price().has_value());
     EXPECT_EQ(peg_after_repricing->price().value(), 10'50);
     EXPECT_EQ(peg_after_repricing->remaining_quantity(), 30);
-    EXPECT_EQ(peg_after_repricing->sequence(), 5);
+    EXPECT_EQ(peg_after_repricing->sequence(), 3);
     EXPECT_EQ(peg_after_repricing->status(), OrderStatus::Active);
 }
 
@@ -2340,7 +2383,7 @@ TEST(MatchingEngineTest, PriceAmendmentRefreshesPegAfterMatching) {
     ASSERT_NE(peg, nullptr);
     ASSERT_TRUE(peg->price().has_value());
     EXPECT_EQ(peg->price().value(), 9'50);
-    EXPECT_EQ(peg->sequence(), 5);
+    EXPECT_EQ(peg->sequence(), 2);
     EXPECT_EQ(peg->status(), OrderStatus::Active);
 }
 

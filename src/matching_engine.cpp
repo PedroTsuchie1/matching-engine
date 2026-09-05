@@ -355,10 +355,7 @@ void MatchingEngine::refresh_pegs(
 
         order_book_.remove(order_id);
 
-        peg_order.apply_peg_reference(
-            reference_price.value(),
-            next_sequence_++
-        );
+        peg_order.apply_peg_reference(reference_price.value());
 
         order_book_.add(peg_order);
     }
