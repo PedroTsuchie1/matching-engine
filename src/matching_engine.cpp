@@ -100,6 +100,63 @@ SubmissionResult MatchingEngine::submit_market(
     };
 }
 
+SubmissionResult MatchingEngine::submit_peg(
+    Side side, PegReference peg_reference, Quantity quantity
+) {
+    if (quantity <= 0)
+        return EngineError::InvalidQuantity;
+
+    const bool supported_combination =
+        (side == Side::Buy &&
+         peg_reference == PegReference::Bid) ||
+        (side == Side::Sell &&
+         peg_reference == PegReference::Offer);
+
+    if (!supported_combination)
+        return EngineError::UnsupportedPegCombination;
+
+    const Side reference_side =
+        peg_reference == PegReference::Bid
+            ? Side::Buy
+            : Side::Sell;
+
+    const std::optional<Price> reference_price =
+        order_book_.best_limit_price(reference_side);
+
+    if (!reference_price.has_value())
+        return EngineError::PegReferenceUnavailable;
+
+    const OrderId order_id = next_order_id_++;
+    const Sequence sequence = next_sequence_++;
+
+    auto order_iterator = orders_by_id_.emplace(
+        order_id,
+        Order::pegged(
+            order_id,
+            side,
+            peg_reference,
+            quantity,
+            sequence,
+            reference_price.value()
+        )
+    ).first;
+
+    Order& peg_order = order_iterator->second;
+
+    order_book_.add(peg_order);
+
+    if (peg_reference == PegReference::Bid)
+        bid_pegs_.insert(order_id);
+    else
+        offer_pegs_.insert(order_id);
+
+    return SubmissionReport{
+        order_id,
+        {},
+        {}
+    };
+}
+
 std::vector<Trade> MatchingEngine::match(Order& aggressive_order) {
     std::vector<Trade> trades;
 

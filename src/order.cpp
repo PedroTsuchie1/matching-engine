@@ -59,7 +59,7 @@ Order Order::pegged(
     );
 }
 
-bool Order::apply_peg_reference(Price reference_price) {
+bool Order::apply_peg_reference(Price reference_price, Sequence new_sequence) {
     if (!is_pegged()) {
         return false;
     }
@@ -70,6 +70,7 @@ bool Order::apply_peg_reference(Price reference_price) {
     }
 
     price_ = reference_price;
+    sequence_ = new_sequence;
 
     return true;
 }

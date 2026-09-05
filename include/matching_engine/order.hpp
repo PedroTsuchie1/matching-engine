@@ -56,7 +56,7 @@ public:
         Price price
     );
 
-    bool apply_peg_reference(Price reference_price);
+    bool apply_peg_reference(Price reference_price, Sequence new_sequence);
     bool cancel();
     bool apply_fill(Quantity quantity);
 

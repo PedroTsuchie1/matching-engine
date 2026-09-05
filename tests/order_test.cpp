@@ -60,7 +60,7 @@ TEST(OrderTest, CreatesActivePeggedOrderAtReferencePrice) {
     EXPECT_EQ(order.status(), OrderStatus::Active);
 }
 
-TEST(OrderTest, RepricesActivePeggedOrderWithoutChangingPriority) {
+TEST(OrderTest, RepricesActivePeggedOrderAndChangesPriority) {
     Order order = Order::pegged(
         6,
         Side::Sell,
@@ -70,13 +70,13 @@ TEST(OrderTest, RepricesActivePeggedOrderWithoutChangingPriority) {
         11'00
     );
 
-    ASSERT_TRUE(order.apply_peg_reference(10'90));
+    ASSERT_TRUE(order.apply_peg_reference(10'90, 20));
 
     ASSERT_TRUE(order.price().has_value());
     EXPECT_EQ(order.price().value(), 10'90);
     EXPECT_EQ(order.status(), OrderStatus::Active);
     EXPECT_EQ(order.remaining_quantity(), 30);
-    EXPECT_EQ(order.sequence(), 12);
+    EXPECT_EQ(order.sequence(), 20);
     ASSERT_TRUE(order.peg_reference().has_value());
     EXPECT_EQ(order.peg_reference().value(), PegReference::Offer);
     EXPECT_TRUE(order.is_pegged());
@@ -86,15 +86,17 @@ TEST(OrderTest, RejectsPegReferenceApplicationForNonPeggedOrders) {
     Order limit = Order::limit(8, Side::Buy, 10'00, 10, 14);
     Order market = Order::market(9, Side::Sell, 10, 15);
 
-    EXPECT_FALSE(limit.apply_peg_reference(10'25));
-    EXPECT_FALSE(market.apply_peg_reference(10'25));
+    EXPECT_FALSE(limit.apply_peg_reference(10'25, 21));
+    EXPECT_FALSE(market.apply_peg_reference(10'25, 22));
 
     ASSERT_TRUE(limit.price().has_value());
     EXPECT_EQ(limit.price().value(), 10'00);
     EXPECT_EQ(limit.status(), OrderStatus::Active);
+    EXPECT_EQ(limit.sequence(), 14);
     EXPECT_FALSE(limit.is_pegged());
     EXPECT_FALSE(market.price().has_value());
     EXPECT_EQ(market.status(), OrderStatus::Active);
+    EXPECT_EQ(market.sequence(), 15);
     EXPECT_FALSE(market.is_pegged());
 }
 
@@ -131,9 +133,10 @@ TEST(OrderTest, RejectsTransitionsAfterCancellation) {
     ASSERT_TRUE(order.cancel());
 
     EXPECT_FALSE(order.cancel());
-    EXPECT_FALSE(order.apply_peg_reference(10'50));
+    EXPECT_FALSE(order.apply_peg_reference(10'50, 23));
     EXPECT_EQ(order.status(), OrderStatus::Cancelled);
     EXPECT_EQ(order.remaining_quantity(), 0);
+    EXPECT_EQ(order.sequence(), 18);
     ASSERT_TRUE(order.price().has_value());
     EXPECT_EQ(order.price().value(), 10'00);
 }

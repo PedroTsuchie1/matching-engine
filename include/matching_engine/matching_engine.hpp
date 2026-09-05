@@ -47,6 +47,10 @@ public:
         Side side, Quantity quantity
     );
 
+    SubmissionResult submit_peg(
+        Side side, PegReference peg_reference, Quantity quantity
+    );
+
     const Order* find_order(OrderId id) const;
     const OrderBook& order_book() const;
 

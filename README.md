@@ -47,4 +47,4 @@ The current decisions are:
 - **Supported pegs:** The initial scope supports `peg bid buy` and `peg offer sell` only.
 - **Peg reference:** Pegged Orders follow prices established by regular Limit Orders. They do not establish or reference pegged prices themselves.
 - **Missing peg reference:** A new Pegged Order is rejected when no eligible reference exists. A resting Pegged Order is cancelled if its reference disappears; cancelled Pegs do not reactivate automatically.
-- **Automatic repricing:** A Pegged Order keeps its original sequence number when its reference price changes.
+- **Automatic repricing:** A Pegged Order receives a new sequence number when its reference price changes.
