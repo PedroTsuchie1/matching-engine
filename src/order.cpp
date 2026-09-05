@@ -75,6 +75,41 @@ bool Order::apply_peg_reference(Price reference_price, Sequence new_sequence) {
     return true;
 }
 
+bool Order::apply_quantity_amendment(
+    Quantity new_remaining_quantity,
+    Sequence new_sequence
+) {
+    if (status_ != OrderStatus::Active)
+        return false;
+
+    if (new_remaining_quantity <= 0)
+        return false;
+
+    remaining_quantity_ = new_remaining_quantity;
+    sequence_ = new_sequence;
+
+    return true;
+}
+
+bool Order::apply_price_amendment(
+    Price new_price,
+    Sequence new_sequence
+) {
+    if (status_ != OrderStatus::Active)
+        return false;
+
+    if (type_ != OrderType::Limit || is_pegged())
+        return false;
+
+    if (new_price <= 0)
+        return false;
+
+    price_ = new_price;
+    sequence_ = new_sequence;
+
+    return true;
+}
+
 bool Order::cancel() {
     if (status_ == OrderStatus::Filled ||
         status_ == OrderStatus::Cancelled) {

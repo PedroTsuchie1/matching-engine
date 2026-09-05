@@ -57,6 +57,14 @@ public:
     );
 
     bool apply_peg_reference(Price reference_price, Sequence new_sequence);
+    bool apply_quantity_amendment(
+        Quantity new_remaining_quantity,
+        Sequence new_sequence
+    );
+    bool apply_price_amendment(
+        Price new_price,
+        Sequence new_sequence
+    );
     bool cancel();
     bool apply_fill(Quantity quantity);
 

@@ -16,7 +16,8 @@ enum class EngineError {
     UnsupportedPegCombination,
     PegReferenceUnavailable,
     OrderNotFound,
-    OrderNotOpen
+    OrderNotOpen,
+    UnsupportedAmendment
 };
 
 struct Trade {
@@ -35,6 +36,18 @@ struct SubmissionReport {
 using SubmissionResult =
     std::variant<SubmissionReport, EngineError>;
 
+struct CancellationReport {
+    OrderId order_id;
+    std::vector<OrderId> cancelled_order_ids;
+};
+
+using CancellationResult = std::variant<CancellationReport, EngineError>;
+
+using AmendmentReport = SubmissionReport;
+
+using AmendmentResult =
+    std::variant<AmendmentReport, EngineError>;
+
 class MatchingEngine {
 public:
     SubmissionResult submit_limit(
@@ -49,6 +62,18 @@ public:
 
     SubmissionResult submit_peg(
         Side side, PegReference peg_reference, Quantity quantity
+    );
+
+    CancellationResult cancel_order(OrderId order_id);
+
+    AmendmentResult amend_quantity(
+        OrderId order_id,
+        Quantity new_remaining_quantity
+    );
+
+    AmendmentResult amend_price(
+        OrderId order_id,
+        Price new_price
     );
 
     const Order* find_order(OrderId id) const;

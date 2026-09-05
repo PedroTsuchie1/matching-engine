@@ -157,6 +157,136 @@ SubmissionResult MatchingEngine::submit_peg(
     };
 }
 
+CancellationResult MatchingEngine::cancel_order(OrderId order_id) {
+    const auto order_iterator = orders_by_id_.find(order_id);
+
+    if (order_iterator == orders_by_id_.end())
+        return EngineError::OrderNotFound;
+
+    Order& order = order_iterator->second;
+
+    if (order.status() != OrderStatus::Active)
+        return EngineError::OrderNotOpen;
+
+    order_book_.remove(order_id);
+
+    if (order.is_pegged()) {
+        const PegReference peg_reference =
+            order.peg_reference().value();
+
+        if (peg_reference == PegReference::Bid)
+            bid_pegs_.erase(order_id);
+        else
+            offer_pegs_.erase(order_id);
+    }
+
+    order.cancel();
+
+    std::vector<OrderId> cancelled_order_ids{
+        order_id
+    };
+
+    refresh_all_pegs(cancelled_order_ids);
+
+    return CancellationReport{
+        order_id,
+        cancelled_order_ids
+    };
+}
+
+AmendmentResult MatchingEngine::amend_quantity(
+    OrderId order_id,
+    Quantity new_remaining_quantity
+) {
+    if (new_remaining_quantity <= 0)
+        return EngineError::InvalidQuantity;
+
+    const auto order_iterator = orders_by_id_.find(order_id);
+
+    if (order_iterator == orders_by_id_.end())
+        return EngineError::OrderNotFound;
+
+    Order& order = order_iterator->second;
+
+    if (order.status() != OrderStatus::Active)
+        return EngineError::OrderNotOpen;
+
+    const bool loses_priority =
+        new_remaining_quantity > order.remaining_quantity();
+
+    if (loses_priority) {
+        order_book_.remove(order_id);
+
+        order.apply_quantity_amendment(
+            new_remaining_quantity,
+            next_sequence_++
+        );
+
+        order_book_.add(order);
+    } else {
+        order.apply_quantity_amendment(
+            new_remaining_quantity,
+            order.sequence()
+        );
+    }
+
+    return AmendmentReport{
+        order_id,
+        {},
+        {}
+    };
+}
+
+AmendmentResult MatchingEngine::amend_price(
+    OrderId order_id,
+    Price new_price
+) {
+    if (new_price <= 0)
+        return EngineError::InvalidPrice;
+
+    const auto order_iterator = orders_by_id_.find(order_id);
+
+    if (order_iterator == orders_by_id_.end())
+        return EngineError::OrderNotFound;
+
+    Order& order = order_iterator->second;
+
+    if (order.status() != OrderStatus::Active)
+        return EngineError::OrderNotOpen;
+
+    if (order.type() != OrderType::Limit || order.is_pegged())
+        return EngineError::UnsupportedAmendment;
+
+    if (order.price().value() == new_price) {
+        return AmendmentReport{
+            order_id,
+            {},
+            {}
+        };
+    }
+
+    order_book_.remove(order_id);
+
+    order.apply_price_amendment(
+        new_price,
+        next_sequence_++
+    );
+
+    std::vector<Trade> trades = match(order);
+
+    if (order.status() == OrderStatus::Active)
+        order_book_.add(order);
+
+    std::vector<OrderId> cancelled_order_ids;
+    refresh_all_pegs(cancelled_order_ids);
+
+    return AmendmentReport{
+        order_id,
+        trades,
+        cancelled_order_ids
+    };
+}
+
 void MatchingEngine::refresh_all_pegs(
     std::vector<OrderId>& cancelled_order_ids
 ) {

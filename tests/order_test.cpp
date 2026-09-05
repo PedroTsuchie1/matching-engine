@@ -100,6 +100,93 @@ TEST(OrderTest, RejectsPegReferenceApplicationForNonPeggedOrders) {
     EXPECT_FALSE(market.is_pegged());
 }
 
+TEST(OrderTest, AppliesQuantityAmendmentWithProvidedPriority) {
+    Order order = Order::limit(20, Side::Buy, 10'00, 50, 30);
+
+    ASSERT_TRUE(order.apply_quantity_amendment(75, 40));
+
+    EXPECT_EQ(order.original_quantity(), 50);
+    EXPECT_EQ(order.remaining_quantity(), 75);
+    EXPECT_EQ(order.sequence(), 40);
+    EXPECT_EQ(order.status(), OrderStatus::Active);
+}
+
+TEST(OrderTest, RejectsNonPositiveQuantityAmendment) {
+    Order order = Order::limit(21, Side::Buy, 10'00, 50, 31);
+
+    EXPECT_FALSE(order.apply_quantity_amendment(0, 41));
+    EXPECT_FALSE(order.apply_quantity_amendment(-10, 42));
+
+    EXPECT_EQ(order.original_quantity(), 50);
+    EXPECT_EQ(order.remaining_quantity(), 50);
+    EXPECT_EQ(order.sequence(), 31);
+    EXPECT_EQ(order.status(), OrderStatus::Active);
+}
+
+TEST(OrderTest, RejectsQuantityAmendmentForClosedOrder) {
+    Order order = Order::limit(22, Side::Sell, 10'00, 25, 32);
+
+    ASSERT_TRUE(order.cancel());
+    EXPECT_FALSE(order.apply_quantity_amendment(20, 43));
+
+    EXPECT_EQ(order.original_quantity(), 25);
+    EXPECT_EQ(order.remaining_quantity(), 0);
+    EXPECT_EQ(order.sequence(), 32);
+    EXPECT_EQ(order.status(), OrderStatus::Cancelled);
+}
+
+TEST(OrderTest, AppliesPriceAmendmentWithProvidedPriority) {
+    Order order = Order::limit(23, Side::Buy, 10'00, 50, 33);
+
+    ASSERT_TRUE(order.apply_price_amendment(10'25, 44));
+
+    ASSERT_TRUE(order.price().has_value());
+    EXPECT_EQ(order.price().value(), 10'25);
+    EXPECT_EQ(order.original_quantity(), 50);
+    EXPECT_EQ(order.remaining_quantity(), 50);
+    EXPECT_EQ(order.sequence(), 44);
+    EXPECT_EQ(order.status(), OrderStatus::Active);
+}
+
+TEST(OrderTest, RejectsInvalidOrUnsupportedPriceAmendment) {
+    Order limit = Order::limit(24, Side::Buy, 10'00, 50, 34);
+    Order market = Order::market(25, Side::Sell, 50, 35);
+    Order peg = Order::pegged(
+        26,
+        Side::Buy,
+        PegReference::Bid,
+        50,
+        36,
+        10'00
+    );
+
+    EXPECT_FALSE(limit.apply_price_amendment(0, 45));
+    EXPECT_FALSE(limit.apply_price_amendment(-10, 46));
+    EXPECT_FALSE(market.apply_price_amendment(10'25, 47));
+    EXPECT_FALSE(peg.apply_price_amendment(10'25, 48));
+
+    ASSERT_TRUE(limit.price().has_value());
+    EXPECT_EQ(limit.price().value(), 10'00);
+    EXPECT_EQ(limit.sequence(), 34);
+    EXPECT_FALSE(market.price().has_value());
+    EXPECT_EQ(market.sequence(), 35);
+    ASSERT_TRUE(peg.price().has_value());
+    EXPECT_EQ(peg.price().value(), 10'00);
+    EXPECT_EQ(peg.sequence(), 36);
+}
+
+TEST(OrderTest, RejectsPriceAmendmentForClosedOrder) {
+    Order order = Order::limit(27, Side::Sell, 10'00, 25, 37);
+
+    ASSERT_TRUE(order.cancel());
+    EXPECT_FALSE(order.apply_price_amendment(10'25, 49));
+
+    ASSERT_TRUE(order.price().has_value());
+    EXPECT_EQ(order.price().value(), 10'00);
+    EXPECT_EQ(order.sequence(), 37);
+    EXPECT_EQ(order.status(), OrderStatus::Cancelled);
+}
+
 TEST(OrderTest, CancelsActiveOrders) {
     Order limit = Order::limit(10, Side::Buy, 10'00, 10, 16);
     Order peg = Order::pegged(
