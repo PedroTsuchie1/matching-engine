@@ -1,23 +1,70 @@
 # Matching Engine
-A single-asset, in-memory order matching engine written in C++20. The project is designed to support Limit, Market, and Pegged Orders while enforcing price-time priority and deterministic order processing.
-## Architecture
-The core is kept independent from command parsing and console output:
 
-```text
-CLI
- └── MatchingEngine
-      ├── OrderBook (buy and sell sides)
-      ├── Order index
-      └── Pegged order management
+A single-asset, in-memory matching engine written in C++20, with limit, market,
+and pegged orders. Supports price-time priority, cancellation, amendments, and
+an interactive command-line interface.
+
+## Getting started
+
+Requires Git, a C++20 compiler, CMake 3.24 or newer, and a build tool such as Make.
+The project has been tested on Ubuntu 24.04 with GCC 13 and CMake 3.28.
+
+### Install dependencies
+
+On Ubuntu 24.04:
+
+```bash
+sudo apt update
+sudo apt install git build-essential cmake
 ```
 
-- `MatchingEngine` coordinates order submission, matching, cancellation, amendment, and pegged-order repricing.
-- `OrderBook` maintains ordered price levels and time priority within each level.
-- `Order` is a value type created through type-specific factories, keeping order construction separate from matching behavior.
-- The CLI runs until `exit` or end-of-file; `help` lists its commands and `print book` displays the current book.
-- Invalid commands and operations return readable `Error: ...` messages without terminating the session.
+CMake downloads GoogleTest 1.15.2 automatically during the first configuration,
+so that step requires internet access. No separate GoogleTest installation is
+needed.
 
-## Book views
+### Clone the repository
+
+Replace `YOUR-USERNAME/YOUR-REPOSITORY` with the GitHub repository path:
+
+```bash
+git clone https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git matching-engine
+cd matching-engine
+```
+
+### Build, test, and run
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+./build/matching_engine
+```
+
+Tests cover order state transitions, book ordering, matching, cancellation,
+amendments, pegged-order updates, formatting, and command parsing.
+
+## Interactive commands
+
+Prices must be positive decimals with at most two decimal places, using a dot
+as the separator. They are stored as integer cents. Quantities must be positive
+integers; quantity amendments set the **remaining quantity**, not the original
+order quantity.
+
+```text
+limit <buy|sell> <price> <quantity>
+market <buy|sell> <quantity>
+peg <bid|offer> <buy|sell> <quantity>
+cancel order <id>
+amend price <id> <price>
+amend quantity <id> <quantity>
+amend order <id> [price <price>] [quantity <quantity>]
+print book
+print book summary
+print level <buy|sell> <price>
+print order <id>
+help
+exit
+```
 
 `print book` shows one order per line as `quantity @ price`, with buys and sells
 side by side. Buys follow descending prices, sells ascending prices, and orders
@@ -27,35 +74,41 @@ Use `print order <id>` or `print level <buy|sell> <price>` for IDs, sequence and
 other details; `print book detailed` has been removed. Use `help` to list commands
 and `exit` or end-of-file to close the session.
 
-## Tooling
-- C++20
-- CMake
-- GoogleTest, integrated with CTest
-- GCC as the reference compiler
-## Build and run
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build --output-on-failure
-./build/matching_engine
-```
-## Matching rules
+### Confirmation for crossing limit orders
 
-- Buy orders prioritize higher prices; sell orders prioritize lower prices.
-- Orders at the same price follow arrival order.
-- Priority is represented by a monotonic sequence number rather than wall-clock time.
-- An aggressive Limit Order trades immediately and rests any remaining quantity at its limit price.
-- A Market Order executes as much as possible immediately and never rests in the book.
-- Trades execute at the price of the resting order.
+The CLI asks for confirmation when a new limit buy is at or above the best ask,
+or a new limit sell is at or below the best bid (including equal prices).
+The warning shows your limit and the best available opposite price: the order
+will execute immediately, fully or partially. Fills use available resting prices
+within your limit; the quoted best price does not apply to every unit if the
+order consumes several levels. Any remainder rests at your limit price.
 
-## Assumptions
-The current decisions are:
-- **Market remainder:** Market Orders use Immediate-or-Cancel semantics; unfilled quantity is discarded.
-- **Trade reporting:** Matches against individual resting orders are recorded separately. Consecutive fills at the same price may be aggregated for console output.
-- **Price representation:** Prices use fixed-point integers with two decimal places. Floating-point values are not used for monetary comparisons.
-- **Quantity amendment:** Reducing quantity keeps time priority; increasing it loses priority.
-- **Price amendment:** Changing price loses time priority. The amended order trades immediately if its new price crosses the book and rests any remainder.
-- **Supported pegs:** The initial scope supports `peg bid buy` and `peg offer sell` only.
-- **Peg reference:** Pegged Orders follow prices established by regular Limit Orders. They do not establish or reference pegged prices themselves.
-- **Missing peg reference:** A new Pegged Order is rejected when no eligible reference exists. A resting Pegged Order is cancelled if its reference disappears; cancelled Pegs do not reactivate automatically.
-- **Automatic repricing:** A Pegged Order receives a new sequence number when its reference price changes.
+Reply `y`/`yes` (or `s`/`sim`) to submit. Reply `n`/`no` (also `nao`/`não`),
+press Enter, or reach end-of-file to discard without creating an order or
+consuming an ID. `exit` discards and closes the session. Other input repeats
+the prompt; it is not executed as a command while confirmation is pending.
+Piped command sequences must include the confirmation response on its own line.
+
+Non-crossing limits, market orders and pegs do not prompt. This confirmation
+applies only to new limit submissions, not amendments; the matching core itself
+still executes crossing limits immediately.
+
+## Architecture
+
+The matching core is independent from command parsing and console output.
+
+| Component | Responsibility |
+| --- | --- |
+| [MatchingEngine](include/matching_engine/matching_engine.hpp) | Owns orders and coordinates matching, cancellation, amendments, and peg updates. |
+| [OrderBook](include/matching_engine/order_book.hpp) | Indexes active orders by price and sequence, and provides book snapshots. |
+| [Order](include/matching_engine/order.hpp) | Holds order state and applies fills, amendments, repricing, and cancellation. |
+| [Console](include/matching_engine/console.hpp) | Parses commands, confirms crossing limit submissions, and reports results. |
+| [Formatting](include/matching_engine/formatting.hpp) | Formats prices, orders, and book snapshots for display. |
+
+## Design decisions
+
+- Once submitted, crossing limits execute immediately to use available liquidity; any remainder rests.
+- Price changes and quantity increases lose priority; quantity reductions keep it.
+- Pegs support `bid buy` and `offer sell`, following regular limits only. They
+  reprice after each operation's matching completes, preserving priority.
+  Without a reference, new pegs are rejected and resting pegs are cancelled.
