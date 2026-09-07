@@ -1,3 +1,12 @@
-# Local project notes
-PROJECT_CONTEXT.md
+# Only these Markdown documents are public
+*.md
+!/README.md
+!/docs/UML.md
+
+# Local build output
 /build/
+
+# Unused local UML drafts
+/docs/uml/index.html
+/docs/uml/order-state.mmd
+/docs/uml/order-state.svg

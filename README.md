@@ -2,7 +2,7 @@
 
 A single-asset, in-memory matching engine written in C++20, with limit, market,
 and pegged orders. Supports price-time priority, cancellation, amendments, and
-an interactive command-line interface.
+an interactive command-line interface, and an optional web interface.
 
 ## Getting started
 
@@ -42,6 +42,24 @@ ctest --test-dir build --output-on-failure
 
 Tests cover order state transitions, book ordering, matching, cancellation,
 amendments, pegged-order updates, formatting, and command parsing.
+
+## Web interface
+
+Requires Python 3.10+ and G++ with C++20. On Ubuntu, install Python with
+`sudo apt install python3` if needed. From the repository root:
+
+```bash
+python3 extras/web/server.py
+```
+
+Open [localhost:8080](http://localhost:8080). The C++ adapter compiles automatically.
+If the port is busy, add `--port 8081` and open [localhost:8081](http://localhost:8081).
+Keep the terminal running; `Ctrl+C` stops the server.
+
+Use **Carregar demonstração** to try a sample book, or submit your own orders.
+**Gerenciar ordem por ID** lets you cancel or change price and remaining quantity.
+The book offers individual-order, price-level and cumulative views; **Status**
+shows recent activity. The CLI and browser use separate in-memory books.
 
 ## Interactive commands
 
