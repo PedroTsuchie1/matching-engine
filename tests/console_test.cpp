@@ -292,5 +292,121 @@ TEST(ConsoleTest, RejectsRemovedDetailedBookCommand) {
     EXPECT_NE(output.str().find("id=1 qty=100 seq=1 type=LIMIT"), std::string::npos);
 }
 
+TEST(ConsoleTest, CrossingBuyWaitsForConsentThenFillsAcrossLevels) {
+    std::istringstream input;
+    std::ostringstream output;
+    Console console(input, output);
+    console.execute("limit sell 10 25");
+    console.execute("limit sell 10.50 40");
+    output.str("");
+    console.execute("limit buy 11 100");
+    EXPECT_NE(output.str().find("Best available ask: 10."), std::string::npos);
+    EXPECT_NE(output.str().find("limit buy 100 @ 11"), std::string::npos);
+    EXPECT_EQ(output.str().find("Trade,"), std::string::npos);
+    EXPECT_EQ(output.str().find("Order created"), std::string::npos);
+    console.execute(" yEs ");
+    EXPECT_NE(output.str().find("Trade, price: 10, qty: 25"), std::string::npos);
+    EXPECT_NE(output.str().find("Trade, price: 10.5, qty: 40"), std::string::npos);
+    console.execute("print order 3");
+    EXPECT_NE(output.str().find("remaining_qty=35"), std::string::npos);
+}
+
+TEST(ConsoleTest, CrossingSellIncludesEqualityAndUsesBestBid) {
+    for (const auto* price : {"10", "9.50"}) {
+        SCOPED_TRACE(price);
+        std::istringstream input;
+        std::ostringstream output;
+        Console console(input, output);
+        console.execute("limit buy 10 50");
+        output.str("");
+        console.execute(std::string("limit sell ") + price + " 20");
+        EXPECT_NE(output.str().find("Best available bid: 10."), std::string::npos);
+        EXPECT_EQ(output.str().find("Trade,"), std::string::npos);
+        console.execute("SIM");
+        EXPECT_NE(output.str().find("Trade, price: 10, qty: 20"), std::string::npos);
+    }
+}
+
+TEST(ConsoleTest, DecliningCrossingLimitDoesNotConsumeIdOrTouchBook) {
+    for (const auto* answer : {"n", "NO", "nao", "não", "", "  "}) {
+        SCOPED_TRACE(answer);
+        std::istringstream input;
+        std::ostringstream output;
+        Console console(input, output);
+        console.execute("limit sell 10 50");
+        output.str("");
+        console.execute("limit buy 10 20");
+        console.execute(answer);
+        console.execute("limit buy 9 20");
+        console.execute("print order 1");
+        EXPECT_NE(output.str().find("Order not submitted"), std::string::npos);
+        EXPECT_NE(output.str().find("Order created: buy 20 @ 9, id: 2"), std::string::npos);
+        EXPECT_NE(output.str().find("remaining_qty=50"), std::string::npos);
+        EXPECT_EQ(output.str().find("Trade,"), std::string::npos);
+    }
+}
+
+TEST(ConsoleTest, PendingConfirmationDoesNotExecuteOtherCommands) {
+    std::istringstream input;
+    std::ostringstream output;
+    Console console(input, output);
+    console.execute("limit sell 10 50");
+    console.execute("limit buy 10 20");
+    console.execute("market buy 50");
+    console.execute("yes extra");
+    EXPECT_NE(output.str().find("Please answer"), std::string::npos);
+    EXPECT_EQ(output.str().find("Trade,"), std::string::npos);
+    console.execute("s");
+    EXPECT_NE(output.str().find("Trade, price: 10, qty: 20"), std::string::npos);
+}
+
+TEST(ConsoleTest, InvalidAndNonCrossingLimitsDoNotAskForConfirmation) {
+    std::istringstream input;
+    std::ostringstream output;
+    Console console(input, output);
+    console.execute("limit sell 10 50");
+    console.execute("limit buy 9.99 20");
+    console.execute("limit sell 10.01 20");
+    console.execute("limit buy 10 0");
+    console.execute("limit buy 10 -1");
+    console.execute("limit sell 0 20");
+    console.execute("limit sell -1 20");
+    EXPECT_EQ(output.str().find("Submit this order?"), std::string::npos);
+    EXPECT_NE(output.str().find("Error: invalid price"), std::string::npos);
+    EXPECT_NE(output.str().find("Error: invalid quantity"), std::string::npos);
+}
+
+TEST(ConsoleTest, EndOfFileDiscardsPendingLimitAndAllowsLaterCommands) {
+    std::istringstream input("limit sell 10 50\nlimit buy 10 20\n");
+    std::ostringstream output;
+    Console console(input, output);
+    console.run();
+    EXPECT_NE(output.str().find("Order not submitted"), std::string::npos);
+    EXPECT_EQ(output.str().find("Trade,"), std::string::npos);
+    console.execute("limit buy 9 20");
+    EXPECT_NE(output.str().find("id: 2"), std::string::npos);
+}
+
+TEST(ConsoleTest, RunReadsConfirmationAndResumesCommands) {
+    std::istringstream input("limit sell 10 50\nlimit buy 10 20\ny\nprint order 1\nexit\n");
+    std::ostringstream output;
+    Console console(input, output);
+    console.run();
+    EXPECT_NE(output.str().find("Trade, price: 10, qty: 20"), std::string::npos);
+    EXPECT_NE(output.str().find("remaining_qty=30"), std::string::npos);
+    EXPECT_NE(output.str().find("Bye"), std::string::npos);
+}
+
+TEST(ConsoleTest, ExitDiscardsPendingLimit) {
+    std::istringstream input;
+    std::ostringstream output;
+    Console console(input, output);
+    console.execute("limit sell 10 50");
+    console.execute("limit buy 10 20");
+    EXPECT_FALSE(console.execute("exit"));
+    EXPECT_NE(output.str().find("Order not submitted\nBye"), std::string::npos);
+    EXPECT_EQ(output.str().find("Trade,"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace matching_engine

@@ -251,8 +251,13 @@ void Console::run() {
         output_ << "> ";
         output_.flush();
 
-        if (!std::getline(input_, line))
+        if (!std::getline(input_, line)) {
+            if (pending_limit_.has_value()) {
+                pending_limit_.reset();
+                output_ << "Order not submitted\n";
+            }
             break;
+        }
 
         if (!execute(line))
             break;
@@ -260,6 +265,9 @@ void Console::run() {
 }
 
 bool Console::execute(const std::string& line) {
+    if (pending_limit_.has_value())
+        return confirm_limit(line);
+
     const std::vector<std::string> tokens = split(line);
 
     if (tokens.empty())
@@ -300,14 +308,7 @@ bool Console::execute(const std::string& line) {
             return true;
         }
 
-        print_order_result(
-            engine_.submit_limit(
-                side.value(),
-                price.value(),
-                quantity.value()
-            ),
-            ResultAction::Created
-        );
+        submit_limit(side.value(), price.value(), quantity.value());
 
         return true;
     }
@@ -574,6 +575,68 @@ bool Console::execute(const std::string& line) {
     return true;
 }
 
+void Console::submit_limit(Side side, Price price, Quantity quantity) {
+    // Validate before quoting: invalid input must never ask for confirmation.
+    if (price <= 0) {
+        print_error(EngineError::InvalidPrice);
+        return;
+    }
+    if (quantity <= 0) {
+        print_error(EngineError::InvalidQuantity);
+        return;
+    }
+
+    const Side opposite = side == Side::Buy ? Side::Sell : Side::Buy;
+    const Order* best = engine_.order_book().best(opposite);
+    if (best != nullptr &&
+        (side == Side::Buy ? price >= best->price().value()
+                          : price <= best->price().value())) {
+        pending_limit_ = PendingLimit{side, price, quantity};
+        output_ << "Warning: limit " << side_command_label(side)
+                << ' ' << quantity << " @ " << format_price(price)
+                << " crosses the book.\n"
+                << "Best available " << (side == Side::Buy ? "ask" : "bid")
+                << ": " << format_price(best->price().value()) << ".\n"
+                << "It will execute immediately, in full or in part, at available prices\n"
+                << "within your limit. The best price is not guaranteed for all units.\n"
+                << "Any unfilled quantity will rest at your limit price.\n"
+                << "Submit this order? [y/N]\n";
+        return;
+    }
+
+    print_order_result(engine_.submit_limit(side, price, quantity),
+                       ResultAction::Created);
+}
+
+bool Console::confirm_limit(const std::string& line) {
+    const auto tokens = split(line);
+    const bool yes = tokens.size() == 1 &&
+        (tokens[0] == "y" || tokens[0] == "yes" ||
+         tokens[0] == "s" || tokens[0] == "sim");
+    const bool stop = tokens.size() == 1 && tokens[0] == "exit";
+    const bool no = tokens.empty() || stop || (tokens.size() == 1 &&
+        (tokens[0] == "n" || tokens[0] == "no" ||
+         tokens[0] == "nao" || tokens[0] == "não"));
+    if (!yes && !no) {
+        output_ << "Please answer y/yes (s/sim) or n/no. Submit? [y/N]\n";
+        return true;
+    }
+
+    const PendingLimit order = pending_limit_.value();
+    pending_limit_.reset();
+    if (yes) {
+        print_order_result(
+            engine_.submit_limit(order.side, order.price, order.quantity),
+            ResultAction::Created
+        );
+    } else {
+        output_ << "Order not submitted\n";
+    }
+    if (stop)
+        output_ << "Bye\n";
+    return !stop;
+}
+
 void Console::print_help() {
     output_
         << "Commands:\n"
@@ -589,7 +652,9 @@ void Console::print_help() {
         << "  print level <buy|sell> <price>\n"
         << "  print order <id>\n"
         << "  help\n"
-        << "  exit\n";
+        << "  exit\n"
+        << "Crossing limits require confirmation: y/yes (s/sim) to submit;\n"
+        << "n/no or an empty line to discard. Amendments do not prompt.\n";
 }
 
 void Console::print_error(EngineError error) {
