@@ -24,10 +24,8 @@ needed.
 
 ### Clone the repository
 
-Replace `YOUR-USERNAME/YOUR-REPOSITORY` with the GitHub repository path:
-
 ```bash
-git clone https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git matching-engine
+git clone https://github.com/PedroTsuchie1/matching-engine.git matching-engine
 cd matching-engine
 ```
 
