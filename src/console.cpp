@@ -509,16 +509,7 @@ bool Console::execute(const std::string& line) {
 
     if (tokens[0] == "print") {
         if (tokens.size() == 2 && tokens[1] == "book") {
-            output_ << format_book_detailed(
-                engine_.order_book().snapshot()
-            );
-            return true;
-        }
-
-        if (tokens.size() == 3 &&
-            tokens[1] == "book" &&
-            tokens[2] == "detailed") {
-            output_ << format_book_detailed(
+            output_ << format_book(
                 engine_.order_book().snapshot()
             );
             return true;
@@ -595,7 +586,6 @@ void Console::print_help() {
         << "  amend order <id> [price <price>] [quantity <quantity>]\n"
         << "  print book\n"
         << "  print book summary\n"
-        << "  print book detailed\n"
         << "  print level <buy|sell> <price>\n"
         << "  print order <id>\n"
         << "  help\n"

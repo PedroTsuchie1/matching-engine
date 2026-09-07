@@ -8,7 +8,7 @@
 namespace matching_engine {
 namespace {
 
-TEST(ConsoleTest, PrintsDetailedAndSummaryBookSideBySide) {
+TEST(ConsoleTest, PrintsIndividualOrdersAndSummaryBookSideBySide) {
     std::istringstream input;
     std::ostringstream output;
     Console console(input, output);
@@ -22,14 +22,16 @@ TEST(ConsoleTest, PrintsDetailedAndSummaryBookSideBySide) {
     output.clear();
 
     ASSERT_TRUE(console.execute("print book"));
-    const std::string detailed = output.str();
+    const std::string book = output.str();
 
-    EXPECT_NE(detailed.find("BUY"), std::string::npos);
-    EXPECT_NE(detailed.find("SELL"), std::string::npos);
-    EXPECT_NE(detailed.find("id=2 qty=20"), std::string::npos);
-    EXPECT_NE(detailed.find("id=4 qty=40"), std::string::npos);
-    EXPECT_LT(detailed.find("10.5"), detailed.find("10 total"));
-    EXPECT_LT(detailed.find("10.75"), detailed.find("11 total"));
+    EXPECT_NE(book.find("Ordens de Compra"), std::string::npos);
+    EXPECT_NE(book.find("Ordens de Venda"), std::string::npos);
+    EXPECT_NE(book.find("20 @ 10.5"), std::string::npos);
+    EXPECT_NE(book.find("40 @ 10.75"), std::string::npos);
+    EXPECT_LT(book.find("20 @ 10.5"), book.find("10 @ 10"));
+    EXPECT_LT(book.find("40 @ 10.75"), book.find("30 @ 11"));
+    EXPECT_EQ(book.find("id="), std::string::npos);
+    EXPECT_EQ(book.find("total="), std::string::npos);
 
     output.str("");
     output.clear();
@@ -156,9 +158,8 @@ TEST(ConsoleTest, PrintsAssignmentPegBeforeNewLimitAfterRepricing) {
     ASSERT_TRUE(console.execute("print book"));
 
     const std::string book = output.str();
-    const std::size_t peg = book.find("id=4 qty=150 seq=4 type=PEG_BID");
-    const std::size_t new_limit =
-        book.find("id=5 qty=300 seq=5 type=LIMIT");
+    const std::size_t peg = book.find("150 @ 10.1");
+    const std::size_t new_limit = book.find("300 @ 10.1");
 
     ASSERT_NE(peg, std::string::npos);
     ASSERT_NE(new_limit, std::string::npos);
@@ -214,7 +215,7 @@ TEST(ConsoleTest, PrintsHelpAndStopsOnExit) {
     EXPECT_TRUE(console.execute("help"));
     EXPECT_FALSE(console.execute("exit"));
 
-    EXPECT_NE(output.str().find("print book detailed"), std::string::npos);
+    EXPECT_EQ(output.str().find("print book detailed"), std::string::npos);
     EXPECT_NE(output.str().find("print book summary"), std::string::npos);
     EXPECT_NE(output.str().find("Bye"), std::string::npos);
 }
@@ -226,14 +227,69 @@ TEST(ConsoleTest, AcceptsCommandsWithDifferentLetterCases) {
 
     EXPECT_TRUE(console.execute("LiMiT BUY 10.50 20"));
     EXPECT_TRUE(console.execute("PEG Bid Buy 10"));
-    EXPECT_TRUE(console.execute("PRINT BOOK DETAILED"));
+    EXPECT_TRUE(console.execute("PRINT BOOK"));
 
     const std::string text = output.str();
 
     EXPECT_NE(text.find("Order created: buy 20 @ 10.5, id: 1"), std::string::npos);
     EXPECT_NE(text.find("Order created: peg bid buy 10 @ 10.5, id: 2"), std::string::npos);
-    EXPECT_NE(text.find("10.5 total=30"), std::string::npos);
-    EXPECT_NE(text.find("type=PEG_BID"), std::string::npos);
+    EXPECT_NE(text.find("20 @ 10.5"), std::string::npos);
+    EXPECT_NE(text.find("10 @ 10.5"), std::string::npos);
+}
+
+TEST(ConsoleTest, BookKeepsSamePriceOrdersSeparateWhileSummaryAggregates) {
+    std::istringstream input;
+    std::ostringstream output;
+    Console console(input, output);
+    console.execute("limit sell 20 100");
+    console.execute("limit sell 20 200");
+    output.str("");
+    console.execute("print book");
+    const auto book = output.str();
+    ASSERT_NE(book.find("100 @ 20"), std::string::npos);
+    ASSERT_NE(book.find("200 @ 20"), std::string::npos);
+    EXPECT_LT(book.find("100 @ 20"), book.find("200 @ 20"));
+    EXPECT_EQ(book.find("300 @ 20"), std::string::npos);
+    output.str("");
+    console.execute("print book summary");
+    EXPECT_NE(output.str().find("300"), std::string::npos);
+    EXPECT_EQ(output.str().find('@'), std::string::npos);
+}
+
+TEST(ConsoleTest, BookReflectsRemainingQuantityCancellationAndPriceAmendments) {
+    std::istringstream input;
+    std::ostringstream output;
+    Console console(input, output);
+    console.execute("limit buy 10 200");
+    console.execute("limit buy 9.99 100");
+    console.execute("limit sell 10.5 100");
+    console.execute("amend price 1 9.98");
+    console.execute("market sell 40");
+    output.str("");
+    console.execute("print book");
+    EXPECT_EQ(output.str(),
+        "Ordens de Compra   | Ordens de Venda\n"
+        "-------------------+-------------------\n"
+        "60 @ 9.99          | 100 @ 10.5\n"
+        "200 @ 9.98         | \n");
+    console.execute("cancel order 1");
+    output.str("");
+    console.execute("print book");
+    EXPECT_EQ(output.str().find("200 @ 9.98"), std::string::npos);
+    EXPECT_NE(output.str().find("60 @ 9.99"), std::string::npos);
+}
+
+TEST(ConsoleTest, RejectsRemovedDetailedBookCommand) {
+    std::istringstream input;
+    std::ostringstream output;
+    Console console(input, output);
+    console.execute("limit buy 10 100");
+    output.str("");
+    console.execute("print book detailed");
+    EXPECT_EQ(output.str(), "Error: invalid print command\n");
+    output.str("");
+    console.execute("print level buy 10");
+    EXPECT_NE(output.str().find("id=1 qty=100 seq=1 type=LIMIT"), std::string::npos);
 }
 
 }  // namespace

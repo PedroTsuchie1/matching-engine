@@ -13,7 +13,7 @@ std::string format_book_summary(
     const OrderBookSnapshot& snapshot
 );
 
-std::string format_book_detailed(
+std::string format_book(
     const OrderBookSnapshot& snapshot
 );
 

@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <sstream>
+#include <limits>
 
 namespace matching_engine {
 namespace {
@@ -62,12 +64,12 @@ TEST(FormattingTest, FormatsEmptyBookInBothModes) {
     const OrderBookSnapshot snapshot;
 
     const std::string summary = format_book_summary(snapshot);
-    const std::string detailed = format_book_detailed(snapshot);
+    const std::string book = format_book(snapshot);
 
     EXPECT_LT(summary.find("BUY"), summary.find("SELL"));
     EXPECT_NE(summary.find("<empty>"), std::string::npos);
-    EXPECT_LT(detailed.find("BUY"), detailed.find("SELL"));
-    EXPECT_NE(detailed.find("<empty>"), std::string::npos);
+    EXPECT_LT(book.find("Ordens de Compra"), book.find("Ordens de Venda"));
+    EXPECT_NE(book.find("<empty>"), std::string::npos);
 }
 
 TEST(FormattingTest, FormatsSummarySideBySideByDepth) {
@@ -95,18 +97,53 @@ TEST(FormattingTest, FormatsSummarySideBySideByDepth) {
     EXPECT_LT(best_sell, second_sell);
 }
 
-TEST(FormattingTest, FormatsDetailedBookWithOrderPriority) {
-    const std::string output = format_book_detailed(sample_snapshot());
+TEST(FormattingTest, PrintsOneOrderPerRowWithoutGroupingPriceLevels) {
+    EXPECT_EQ(
+        format_book(sample_snapshot()),
+        "Ordens de Compra   | Ordens de Venda\n"
+        "-------------------+-------------------\n"
+        "30 @ 10.5          | 40 @ 10.75\n"
+        "20 @ 10.5          | 30 @ 11\n"
+        "10 @ 10            | \n"
+    );
+}
 
-    const std::size_t first_order = output.find("id=3");
-    const std::size_t second_order = output.find("id=2");
+TEST(FormattingTest, KeepsIdenticalOrdersAsSeparateLines) {
+    auto snapshot = sample_snapshot();
+    snapshot.buys[0].orders[1].remaining_quantity = 30;
+    snapshot.buys[0].total_quantity = 60;
+    const std::string output = format_book(snapshot);
+    const auto first = output.find("30 @ 10.5");
+    ASSERT_NE(first, std::string::npos);
+    EXPECT_NE(output.find("30 @ 10.5", first + 1), std::string::npos);
+    EXPECT_EQ(output.find("60 @ 10.5"), std::string::npos);
+    for (const auto* field : {"id=", "seq=", "type=", "total="})
+        EXPECT_EQ(output.find(field), std::string::npos);
+}
 
-    ASSERT_NE(first_order, std::string::npos);
-    ASSERT_NE(second_order, std::string::npos);
-    EXPECT_LT(first_order, second_order);
-    EXPECT_NE(output.find("type=LIMIT"), std::string::npos);
-    EXPECT_NE(output.find("type=PEG_BID"), std::string::npos);
-    EXPECT_NE(output.find("type=PEG_OFFER"), std::string::npos);
+TEST(FormattingTest, PrintsEitherSideAloneWithoutLosingOrders) {
+    auto snapshot = sample_snapshot();
+    snapshot.buys.clear();
+    const auto sells = format_book(snapshot);
+    EXPECT_NE(sells.find("                   | 40 @ 10.75\n"), std::string::npos);
+    EXPECT_NE(sells.find("                   | 30 @ 11\n"), std::string::npos);
+    snapshot = sample_snapshot();
+    snapshot.sells.clear();
+    EXPECT_NE(format_book(snapshot).find("10 @ 10            | \n"), std::string::npos);
+}
+
+TEST(FormattingTest, ExpandsColumnsToKeepLargeValuesAligned) {
+    auto snapshot = sample_snapshot();
+    snapshot.buys[0].price = std::numeric_limits<Price>::max();
+    snapshot.buys[0].orders[0].remaining_quantity = std::numeric_limits<Quantity>::max();
+    const std::string output = format_book(snapshot);
+    std::istringstream lines(output);
+    std::string line;
+    std::getline(lines, line);
+    const auto separator = line.find('|');
+    std::getline(lines, line); // Heading separator.
+    while (std::getline(lines, line))
+        EXPECT_EQ(line.find('|'), separator);
 }
 
 TEST(FormattingTest, FormatsOnePriceLevel) {

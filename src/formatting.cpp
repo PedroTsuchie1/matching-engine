@@ -83,38 +83,18 @@ std::string summary_level(
     return output.str();
 }
 
-std::vector<std::string> detailed_level_lines(
-    const BookLevelSnapshot* level
+std::vector<std::string> book_order_lines(
+    const std::vector<BookLevelSnapshot>& levels
 ) {
-    if (level == nullptr)
-        return {};
-
     std::vector<std::string> lines;
-
-    std::ostringstream heading;
-    heading
-        << format_price(level->price)
-        << " total="
-        << level->total_quantity;
-
-    lines.push_back(heading.str());
-
-    for (const BookOrderSnapshot& order : level->orders) {
-        std::ostringstream order_line;
-
-        order_line
-            << "  id="
-            << order.order_id
-            << " qty="
-            << order.remaining_quantity
-            << " seq="
-            << order.sequence
-            << " type="
-            << snapshot_order_label(order);
-
-        lines.push_back(order_line.str());
+    for (const BookLevelSnapshot& level : levels) {
+        for (const BookOrderSnapshot& order : level.orders) {
+            lines.push_back(
+                std::to_string(order.remaining_quantity) + " @ " +
+                format_price(level.price)
+            );
+        }
     }
-
     return lines;
 }
 
@@ -223,81 +203,33 @@ std::string format_book_summary(
     return output.str();
 }
 
-std::string format_book_detailed(
+std::string format_book(
     const OrderBookSnapshot& snapshot
 ) {
+    // Snapshot order already encodes price-time priority. Flatten each side
+    // independently so two orders at one price remain two consecutive rows.
+    const auto buys = book_order_lines(snapshot.buys);
+    const auto sells = book_order_lines(snapshot.sells);
+    int column_width = 18;
+    for (const auto& line : buys)
+        column_width = std::max(column_width, static_cast<int>(line.size()));
+    for (const auto& line : sells)
+        column_width = std::max(column_width, static_cast<int>(line.size()));
+
     std::ostringstream output;
+    output << std::left << std::setw(column_width)
+           << "Ordens de Compra" << " | Ordens de Venda\n"
+           << std::string(column_width, '-') << "-+-"
+           << std::string(column_width, '-') << '\n';
 
-    output
-        << std::left
-        << std::setw(book_column_width)
-        << "BUY"
-        << " | SELL\n";
-
-    const std::size_t depth = std::max(
-        snapshot.buys.size(),
-        snapshot.sells.size()
-    );
-
-    if (depth == 0) {
-        output
-            << std::setw(book_column_width)
-            << "<empty>"
-            << " | <empty>\n";
-
-        return output.str();
+    const std::size_t rows = std::max(buys.size(), sells.size());
+    if (rows == 0) {
+        output << std::setw(column_width) << "<empty>" << " | <empty>\n";
     }
-
-    for (std::size_t index = 0; index < depth; ++index) {
-        const BookLevelSnapshot* buy_level =
-            index < snapshot.buys.size()
-                ? &snapshot.buys[index]
-                : nullptr;
-
-        const BookLevelSnapshot* sell_level =
-            index < snapshot.sells.size()
-                ? &snapshot.sells[index]
-                : nullptr;
-
-        const std::vector<std::string> buy_lines =
-            detailed_level_lines(buy_level);
-
-        const std::vector<std::string> sell_lines =
-            detailed_level_lines(sell_level);
-
-        const std::size_t line_count = std::max(
-            buy_lines.size(),
-            sell_lines.size()
-        );
-
-        for (std::size_t line = 0; line < line_count; ++line) {
-            const std::string buy_text =
-                line < buy_lines.size()
-                    ? buy_lines[line]
-                    : "";
-
-            const std::string sell_text =
-                line < sell_lines.size()
-                    ? sell_lines[line]
-                    : "";
-
-            output
-                << std::setw(book_column_width)
-                << buy_text
-                << " | "
-                << sell_text
-                << '\n';
-        }
-
-        if (index + 1 < depth) {
-            output
-                << std::string(book_column_width, '-')
-                << "-+-"
-                << std::string(book_column_width, '-')
-                << '\n';
-        }
+    for (std::size_t row = 0; row < rows; ++row) {
+        output << std::setw(column_width) << (row < buys.size() ? buys[row] : "")
+               << " | " << (row < sells.size() ? sells[row] : "") << '\n';
     }
-
     return output.str();
 }
 

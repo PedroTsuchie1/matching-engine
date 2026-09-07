@@ -16,6 +16,17 @@ CLI
 - `Order` is a value type created through type-specific factories, keeping order construction separate from matching behavior.
 - The CLI runs until `exit` or end-of-file; `help` lists its commands and `print book` displays the current book.
 - Invalid commands and operations return readable `Error: ...` messages without terminating the session.
+
+## Book views
+
+`print book` shows one order per line as `quantity @ price`, with buys and sells
+side by side. Buys follow descending prices, sells ascending prices, and orders
+at the same price keep their queue priority. Quantities are **not aggregated**.
+`print book summary` aggregates remaining quantity and order count at each price.
+Use `print order <id>` or `print level <buy|sell> <price>` for IDs, sequence and
+other details; `print book detailed` has been removed. Use `help` to list commands
+and `exit` or end-of-file to close the session.
+
 ## Tooling
 - C++20
 - CMake
