@@ -1,8 +1,8 @@
 # Matching Engine
 
 A single-asset, in-memory matching engine written in C++20, with limit, market,
-and pegged orders. Supports price-time priority, cancellation, amendments, and
-an interactive command-line interface, and an optional web interface.
+and pegged orders. Supports price-time priority, cancellation, and amendments,
+with an interactive command-line interface and an optional web interface.
 
 ## Getting started
 
@@ -50,9 +50,7 @@ Requires Python 3.10+ and G++ with C++20. On Ubuntu, install Python with
 python3 extras/web/server.py
 ```
 
-Open [localhost:8080](http://localhost:8080). The C++ adapter compiles automatically.
-If the port is busy, add `--port 8081` and open [localhost:8081](http://localhost:8081).
-Keep the terminal running; `Ctrl+C` stops the server.
+Open [localhost:8080](http://localhost:8080).
 
 Use **Carregar demonstração** to try a sample book, or submit your own orders.
 **Gerenciar ordem por ID** lets you cancel or change price and remaining quantity.
@@ -87,27 +85,19 @@ side by side. Buys follow descending prices, sells ascending prices, and orders
 at the same price keep their queue priority. Quantities are **not aggregated**.
 `print book summary` aggregates remaining quantity and order count at each price.
 Use `print order <id>` or `print level <buy|sell> <price>` for IDs, sequence and
-other details; `print book detailed` has been removed. Use `help` to list commands
-and `exit` or end-of-file to close the session.
+other details.
 
 ### Confirmation for crossing limit orders
 
-The CLI asks for confirmation when a new limit buy is at or above the best ask,
-or a new limit sell is at or below the best bid (including equal prices).
-The warning shows your limit and the best available opposite price: the order
-will execute immediately, fully or partially. Fills use available resting prices
-within your limit; the quoted best price does not apply to every unit if the
-order consumes several levels. Any remainder rests at your limit price.
+The CLI asks for confirmation before submitting a limit order that crosses the
+book. The warning shows your limit and the best available opposite price: the
+order will execute immediately, fully or partially. Fills use resting prices
+within your limit and may span multiple levels. Any remainder rests at your
+limit price.
 
-Reply `y`/`yes` (or `s`/`sim`) to submit. Reply `n`/`no` (also `nao`/`não`),
-press Enter, or reach end-of-file to discard without creating an order or
-consuming an ID. `exit` discards and closes the session. Other input repeats
-the prompt; it is not executed as a command while confirmation is pending.
-Piped command sequences must include the confirmation response on its own line.
-
-Non-crossing limits, market orders and pegs do not prompt. This confirmation
-applies only to new limit submissions, not amendments; the matching core itself
-still executes crossing limits immediately.
+Reply `y`/`yes` to submit or `n`/`no` to discard. For piped input, include the
+response on its own line. Confirmation applies only to new crossing limit
+submissions in the CLI, not amendments or direct calls to the matching core.
 
 ## Architecture
 
