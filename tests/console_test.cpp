@@ -24,8 +24,8 @@ TEST(ConsoleTest, PrintsIndividualOrdersAndSummaryBookSideBySide) {
     ASSERT_TRUE(console.execute("print book"));
     const std::string book = output.str();
 
-    EXPECT_NE(book.find("Ordens de Compra"), std::string::npos);
-    EXPECT_NE(book.find("Ordens de Venda"), std::string::npos);
+    EXPECT_NE(book.find("BUY"), std::string::npos);
+    EXPECT_NE(book.find("SELL"), std::string::npos);
     EXPECT_NE(book.find("20 @ 10.5"), std::string::npos);
     EXPECT_NE(book.find("40 @ 10.75"), std::string::npos);
     EXPECT_LT(book.find("20 @ 10.5"), book.find("10 @ 10"));
@@ -268,10 +268,10 @@ TEST(ConsoleTest, BookReflectsRemainingQuantityCancellationAndPriceAmendments) {
     output.str("");
     console.execute("print book");
     EXPECT_EQ(output.str(),
-        "Ordens de Compra   | Ordens de Venda\n"
-        "-------------------+-------------------\n"
-        "60 @ 9.99          | 100 @ 10.5\n"
-        "200 @ 9.98         | \n");
+        "BUY                            | SELL\n"
+        "-------------------------------+-------------------------------\n"
+        "60 @ 9.99                      | 100 @ 10.5\n"
+        "200 @ 9.98                     | \n");
     console.execute("cancel order 1");
     output.str("");
     console.execute("print book");

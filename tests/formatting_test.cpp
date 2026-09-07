@@ -68,7 +68,7 @@ TEST(FormattingTest, FormatsEmptyBookInBothModes) {
 
     EXPECT_LT(summary.find("BUY"), summary.find("SELL"));
     EXPECT_NE(summary.find("<empty>"), std::string::npos);
-    EXPECT_LT(book.find("Ordens de Compra"), book.find("Ordens de Venda"));
+    EXPECT_LT(book.find("BUY"), book.find("SELL"));
     EXPECT_NE(book.find("<empty>"), std::string::npos);
 }
 
@@ -100,12 +100,31 @@ TEST(FormattingTest, FormatsSummarySideBySideByDepth) {
 TEST(FormattingTest, PrintsOneOrderPerRowWithoutGroupingPriceLevels) {
     EXPECT_EQ(
         format_book(sample_snapshot()),
-        "Ordens de Compra   | Ordens de Venda\n"
-        "-------------------+-------------------\n"
-        "30 @ 10.5          | 40 @ 10.75\n"
-        "20 @ 10.5          | 30 @ 11\n"
-        "10 @ 10            | \n"
+        "BUY                            | SELL\n"
+        "-------------------------------+-------------------------------\n"
+        "30 @ 10.5                      | 40 @ 10.75\n"
+        "20 @ 10.5                      | 30 @ 11\n"
+        "10 @ 10                        | \n"
     );
+}
+
+TEST(FormattingTest, BookAndSummaryShareEnglishHeadingsAndSeparators) {
+    for (const auto& snapshot : {OrderBookSnapshot{}, sample_snapshot()}) {
+        std::istringstream book(format_book(snapshot));
+        std::istringstream summary(format_book_summary(snapshot));
+        std::string book_heading, summary_heading, columns, book_rule, summary_rule;
+        std::getline(book, book_heading);
+        std::getline(summary, summary_heading);
+        EXPECT_EQ(book_heading, summary_heading);
+        EXPECT_EQ(book_heading, "BUY                            | SELL");
+        std::getline(book, book_rule);
+        std::getline(summary, columns);
+        std::getline(summary, summary_rule);
+        EXPECT_EQ(book_rule, summary_rule);
+        EXPECT_NE(columns.find("PRICE"), std::string::npos);
+        EXPECT_NE(columns.find("QTY"), std::string::npos);
+        EXPECT_NE(columns.find("ORDERS"), std::string::npos);
+    }
 }
 
 TEST(FormattingTest, KeepsIdenticalOrdersAsSeparateLines) {
@@ -125,11 +144,11 @@ TEST(FormattingTest, PrintsEitherSideAloneWithoutLosingOrders) {
     auto snapshot = sample_snapshot();
     snapshot.buys.clear();
     const auto sells = format_book(snapshot);
-    EXPECT_NE(sells.find("                   | 40 @ 10.75\n"), std::string::npos);
-    EXPECT_NE(sells.find("                   | 30 @ 11\n"), std::string::npos);
+    EXPECT_NE(sells.find("                               | 40 @ 10.75\n"), std::string::npos);
+    EXPECT_NE(sells.find("                               | 30 @ 11\n"), std::string::npos);
     snapshot = sample_snapshot();
     snapshot.sells.clear();
-    EXPECT_NE(format_book(snapshot).find("10 @ 10            | \n"), std::string::npos);
+    EXPECT_NE(format_book(snapshot).find("10 @ 10                        | \n"), std::string::npos);
 }
 
 TEST(FormattingTest, ExpandsColumnsToKeepLargeValuesAligned) {

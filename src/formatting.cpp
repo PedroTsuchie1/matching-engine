@@ -9,7 +9,21 @@
 namespace matching_engine {
 namespace {
 
-constexpr int book_column_width = 45;
+constexpr int book_column_width = 30;
+
+void print_book_heading(
+    std::ostream& output,
+    int column_width,
+    const std::string& columns = ""
+) {
+    output << std::left << std::setw(column_width) << "BUY" << " | SELL\n";
+    if (!columns.empty()) {
+        output << std::setw(column_width) << columns
+               << " | " << columns << '\n';
+    }
+    output << std::string(column_width, '-') << "-+-"
+           << std::string(column_width, '-') << '\n';
+}
 
 const char* side_label(Side side) {
     return side == Side::Buy ? "BUY" : "SELL";
@@ -153,19 +167,15 @@ std::string format_book_summary(
     const OrderBookSnapshot& snapshot
 ) {
     std::ostringstream output;
-
-    output
-        << std::left
-        << std::setw(book_column_width)
-        << "BUY"
-        << " | SELL\n";
-
-    output
-        << std::setw(book_column_width)
-        << summary_heading()
-        << " | "
-        << summary_heading()
-        << '\n';
+    int column_width = book_column_width;
+    for (const auto* levels : {&snapshot.buys, &snapshot.sells}) {
+        for (const auto& level : *levels) {
+            column_width = std::max(
+                column_width, static_cast<int>(summary_level(&level).size())
+            );
+        }
+    }
+    print_book_heading(output, column_width, summary_heading());
 
     const std::size_t depth = std::max(
         snapshot.buys.size(),
@@ -174,7 +184,7 @@ std::string format_book_summary(
 
     if (depth == 0) {
         output
-            << std::setw(book_column_width)
+            << std::setw(column_width)
             << "<empty>"
             << " | <empty>\n";
 
@@ -193,7 +203,7 @@ std::string format_book_summary(
                 : nullptr;
 
         output
-            << std::setw(book_column_width)
+            << std::setw(column_width)
             << summary_level(buy_level)
             << " | "
             << summary_level(sell_level)
@@ -210,17 +220,14 @@ std::string format_book(
     // independently so two orders at one price remain two consecutive rows.
     const auto buys = book_order_lines(snapshot.buys);
     const auto sells = book_order_lines(snapshot.sells);
-    int column_width = 18;
+    int column_width = book_column_width;
     for (const auto& line : buys)
         column_width = std::max(column_width, static_cast<int>(line.size()));
     for (const auto& line : sells)
         column_width = std::max(column_width, static_cast<int>(line.size()));
 
     std::ostringstream output;
-    output << std::left << std::setw(column_width)
-           << "Ordens de Compra" << " | Ordens de Venda\n"
-           << std::string(column_width, '-') << "-+-"
-           << std::string(column_width, '-') << '\n';
+    print_book_heading(output, column_width);
 
     const std::size_t rows = std::max(buys.size(), sells.size());
     if (rows == 0) {
