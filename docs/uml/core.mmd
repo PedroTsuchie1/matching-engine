@@ -1,0 +1,44 @@
+classDiagram
+    direction LR
+
+    class Input
+
+    class MatchingEngine {
+        +submit_limit(...)
+        +submit_market(...)
+        +submit_peg(...)
+        +cancel_order(...)
+        +amend_order(...)
+        -match(...)
+        -refresh_all_pegs(...)
+    }
+
+    class Order {
+        -id_
+        -side_
+        -price_
+        -remaining_quantity_
+        -sequence_
+        -peg_reference_
+        -status_
+        +apply_fill(...)
+        +cancel()
+        +apply_peg_reference(...)
+    }
+
+    class OrderBook {
+        +add(...)
+        +remove(...)
+        +best(...)
+        +snapshot()
+    }
+
+    Input ..> MatchingEngine : envia comandos
+    MatchingEngine "1" *-- "1" OrderBook : order_book_ (livro por valor)
+    MatchingEngine "1" *-- "0..*" Order : orders_by_id_ (objetos por ID)
+    OrderBook "0..1" --> "0..*" Order : organiza ponteiros Order* por preco
+
+    style Input fill:#f1f5f9,stroke:#94a3b8,color:#475569
+    style MatchingEngine fill:#eff6ff,stroke:#2563eb,color:#172554
+    style Order fill:#ecfdf5,stroke:#059669,color:#064e3b
+    style OrderBook fill:#fff7ed,stroke:#ea580c,color:#7c2d12

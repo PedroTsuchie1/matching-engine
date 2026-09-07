@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="800" viewBox="0 0 1040 800" role="img" aria-labelledby="title description">
+  <title id="title">Fluxo do matching de ordens limit e market</title>
+  <desc id="description">Validar a entrada e criar a ordem. Selecionar a melhor contraparte por preço e prioridade. Enquanto houver saldo e contraparte compatível, preencher ambas as ordens no preço passivo e retirar a passiva se totalmente preenchida. Ao terminar, manter o saldo limit no livro ou cancelar o saldo market. Atualizar pegs e retornar o relatório. Entradas inválidas retornam EngineError sem criar ordem.</desc>
+  <!-- Fonte vetorial editável. Coordenadas explícitas mantêm o layout offline,
+       sem dependência de um renderizador Mermaid. -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #172554; }
+      .phase { font-size: 13px; font-weight: 700; letter-spacing: 1.6px; fill: #64748b; }
+      .heading { font-size: 18px; font-weight: 600; text-anchor: middle; }
+      .detail { font-size: 16px; text-anchor: middle; fill: #475569; }
+      .guard { font-size: 14px; font-weight: 600; fill: #475569; }
+      .edge { fill: none; stroke: #64748b; stroke-width: 1.7; stroke-linejoin: round; marker-end: url(#arrow); }
+      .engine { fill: #eff6ff; stroke: #93b4ed; stroke-width: 1.3; }
+      .book { fill: #fff7ed; stroke: #edb87d; stroke-width: 1.3; }
+      .order { fill: #ecfdf5; stroke: #83c7ac; stroke-width: 1.3; }
+      .neutral { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.3; }
+      .decision { fill: #fff; stroke: #94a3b8; stroke-width: 1.5; }
+    </style>
+  </defs>
+  <rect width="1040" height="800" fill="#fff"/>
+
+  <!-- 01: a rejeição termina aqui; apenas entradas válidas criam Order. -->
+  <text class="phase" x="36" y="30">01 / ENTRADA</text>
+  <path class="edge" d="M 186 86 H 226"/>
+  <path class="edge" d="M 406 86 H 448"/>
+  <path class="edge" d="M 572 86 H 678"/>
+  <path class="edge" d="M 510 129 V 150"/>
+  <path class="edge" d="M 830 116 V 238"/>
+  <text class="guard" x="610" y="74">Sim</text>
+  <text class="guard" x="524" y="146">Não</text>
+  <rect class="neutral" x="36" y="56" width="150" height="60" rx="10"/>
+  <text class="heading" x="111" y="81">Input</text>
+  <text class="detail" x="111" y="103">limit / market</text>
+  <rect class="engine" x="226" y="56" width="180" height="60" rx="10"/>
+  <text class="heading" x="316" y="92">Validar entrada</text>
+  <path class="decision" d="M 510 43 L 572 86 L 510 129 L 448 86 Z"/>
+  <text class="heading" x="510" y="92">Válida?</text>
+  <rect x="420" y="150" width="180" height="42" rx="10" fill="#fff1f2" stroke="#fda4af"/>
+  <text class="heading" x="510" y="177" style="fill:#9f1239">EngineError</text>
+  <rect class="engine" x="678" y="56" width="304" height="60" rx="10"/>
+  <text class="heading" x="830" y="81">Criar Order</text>
+  <text class="detail" x="830" y="103">Atribuir ID e sequência</text>
+
+  <!-- 02: o caminho de execução retorna à seleção da contraparte. -->
+  <text class="phase" x="36" y="220">02 / CICLO DE MATCHING</text>
+  <path class="edge" d="M 830 298 V 324"/>
+  <path class="edge" d="M 726 382 H 588"/>
+  <path class="edge" d="M 308 382 H 268"/>
+  <path class="edge" d="M 152 346 V 268 H 678"/>
+  <path class="edge" d="M 830 440 V 506"/>
+  <text class="guard" x="636" y="371">Sim</text>
+  <text class="guard" x="844" y="477">Não</text>
+  <text class="detail" x="429" y="256">Repetir com o saldo restante</text>
+  <rect class="book" x="678" y="238" width="304" height="60" rx="10"/>
+  <text class="heading" x="830" y="263">Buscar contraparte no livro</text>
+  <text class="detail" x="830" y="285">Melhor preço → prioridade</text>
+  <path class="decision" d="M 830 324 L 934 382 L 830 440 L 726 382 Z"/>
+  <text class="detail" x="830" y="368" style="fill:#172554">Há saldo e</text>
+  <text class="detail" x="830" y="388" style="fill:#172554">contraparte</text>
+  <text class="detail" x="830" y="408" style="fill:#172554">compatível?</text>
+  <rect class="order" x="308" y="346" width="280" height="72" rx="10"/>
+  <text class="heading" x="448" y="370">Preencher as duas ordens</text>
+  <text class="detail" x="448" y="390">Quantidade = menor saldo</text>
+  <text class="detail" x="448" y="409">Trade no preço passivo</text>
+  <rect class="book" x="36" y="346" width="232" height="72" rx="10"/>
+  <text class="heading" x="152" y="373">Retirar passiva do livro</text>
+  <text class="detail" x="152" y="398">se totalmente preenchida</text>
+
+  <!-- 03: casos mutuamente exclusivos; pegs só após o ciclo completo. -->
+  <text class="phase" x="36" y="488">03 / SALDO E RETORNO</text>
+  <rect x="36" y="506" width="946" height="164" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="heading" x="509" y="535">Tratar o saldo da ordem que chegou</text>
+  <rect class="book" x="54" y="555" width="286" height="94" rx="8"/>
+  <text class="heading" x="197" y="582">Limit com saldo</text>
+  <text class="detail" x="197" y="608">Adicionar a ordem ao livro</text>
+  <text class="detail" x="197" y="629">com a quantidade restante</text>
+  <rect class="order" x="366" y="555" width="286" height="94" rx="8"/>
+  <text class="heading" x="509" y="582">Market com saldo</text>
+  <text class="detail" x="509" y="608">Cancelar o restante e</text>
+  <text class="detail" x="509" y="629">registrar o cancelamento</text>
+  <rect class="neutral" x="678" y="555" width="286" height="94" rx="8"/>
+  <text class="heading" x="821" y="582">Sem saldo</text>
+  <text class="detail" x="821" y="608">Ordem preenchida;</text>
+  <text class="detail" x="821" y="629">não entra no livro</text>
+  <path class="edge" d="M 509 670 V 712"/>
+  <path class="edge" d="M 652 744 H 700"/>
+  <rect class="engine" x="366" y="712" width="286" height="64" rx="10"/>
+  <text class="heading" x="509" y="739">Atualizar pegs</text>
+  <text class="detail" x="509" y="762">Após todos os fills</text>
+  <rect class="neutral" x="700" y="712" width="282" height="64" rx="10"/>
+  <text class="heading" x="841" y="739">Retornar relatório ao Input</text>
+  <text class="detail" x="841" y="762">ID, trades e cancelamentos</text>
+</svg>

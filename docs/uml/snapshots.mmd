@@ -1,0 +1,29 @@
+classDiagram
+    direction LR
+
+    class OrderBook {
+        <<core>>
+        +snapshot()
+    }
+    class OrderBookSnapshot {
+        <<struct>>
+    }
+    class BookLevelSnapshot {
+        <<struct>>
+        +price
+        +total_quantity
+    }
+    class BookOrderSnapshot {
+        <<struct>>
+        +order_id
+        +remaining_quantity
+    }
+
+    OrderBook ..> OrderBookSnapshot : copia
+    OrderBookSnapshot "1" *-- "0..*" BookLevelSnapshot : buys e sells
+    BookLevelSnapshot "1" *-- "1..*" BookOrderSnapshot : orders
+
+    style OrderBook fill:#fff7ed,stroke:#ea580c,color:#7c2d12
+    style OrderBookSnapshot fill:#f8fafc,stroke:#64748b,color:#0f172a
+    style BookLevelSnapshot fill:#fff7ed,stroke:#ea580c,color:#7c2d12
+    style BookOrderSnapshot fill:#ecfdf5,stroke:#059669,color:#064e3b

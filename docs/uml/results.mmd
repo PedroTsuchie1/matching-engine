@@ -1,0 +1,51 @@
+classDiagram
+    direction TB
+
+    class MatchingEngine {
+        <<core>>
+    }
+    class AmendmentRequest {
+        <<struct>>
+        +price
+        +remaining_quantity
+    }
+    class SubmissionReport {
+        <<struct>>
+        +order_id
+    }
+    class CancellationReport {
+        <<struct>>
+        +order_id
+    }
+    class Trade {
+        <<struct>>
+        +resting_order_id
+        +aggressive_order_id
+        +price
+        +quantity
+    }
+    class Cancellation {
+        <<struct>>
+        +order_id
+        +quantity
+        +reason
+    }
+    class EngineError {
+        <<enumeration>>
+    }
+
+    MatchingEngine ..> AmendmentRequest : recebe
+    MatchingEngine ..> SubmissionReport : submete ou altera
+    MatchingEngine ..> CancellationReport : cancela
+    MatchingEngine ..> EngineError : pode retornar
+    SubmissionReport "1" *-- "0..*" Trade : trades
+    SubmissionReport "0..1" *-- "0..*" Cancellation : cancellations
+    CancellationReport "0..1" *-- "0..*" Cancellation : cancellations
+
+    style MatchingEngine fill:#eff6ff,stroke:#2563eb,color:#172554
+    style AmendmentRequest fill:#f8fafc,stroke:#64748b,color:#0f172a
+    style SubmissionReport fill:#eff6ff,stroke:#2563eb,color:#172554
+    style CancellationReport fill:#fff7ed,stroke:#ea580c,color:#7c2d12
+    style Trade fill:#ecfdf5,stroke:#059669,color:#064e3b
+    style Cancellation fill:#fff7ed,stroke:#ea580c,color:#7c2d12
+    style EngineError fill:#fff1f2,stroke:#e11d48,color:#881337
