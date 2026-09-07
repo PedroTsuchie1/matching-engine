@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#f4f3ef">
+    <title>Livro de ofertas · Simulação</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <main>
+        <div class="session-toolbar">
+          <div class="session-actions" role="group" aria-label="Ações da sessão">
+            <button type="button" class="demo-action" id="demo-button" data-mutation disabled>Carregar demonstração</button>
+            <button type="button" class="icon-button" id="reset-button" title="Reiniciar sessão" aria-label="Reiniciar sessão" data-mutation disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 8a6.5 6.5 0 1 1 .6 5.4M3.5 3.5V8H8"/></svg></button>
+          </div>
+        </div>
+
+        <div class="notification" id="notification" role="status" hidden><span id="notification-text"></span><div class="notification-actions"><button type="button" id="recover-button" class="notification-recover" hidden>Reiniciar sessão</button><button id="dismiss-notification" aria-label="Fechar aviso">×</button></div></div>
+
+        <section class="market-summary" aria-label="Resumo da sessão">
+          <article class="metric-card"><div class="metric-label">Melhor compra <span class="metric-code">BID</span></div><div class="metric-value buy-text" id="best-bid">—</div><div class="metric-detail" id="best-bid-detail">Nenhuma compra no livro</div></article>
+          <article class="metric-card"><div class="metric-label">Melhor venda <span class="metric-code">ASK</span></div><div class="metric-value sell-text" id="best-ask">—</div><div class="metric-detail" id="best-ask-detail">Nenhuma venda no livro</div></article>
+          <article class="metric-card"><div class="metric-label">Spread</div><div class="metric-value" id="spread">—</div><div class="metric-detail">Entre a melhor compra e venda</div></article>
+          <article class="metric-card"><div class="metric-label">Execuções</div><div class="metric-value" id="trade-count">0</div><div class="metric-detail" id="executed-quantity">0 unidades negociadas</div></article>
+        </section>
+
+        <div class="workspace-navigation"><div class="workspace-tabs" role="tablist" aria-label="Áreas da interface"><button id="desk-tab" class="workspace-tab active" role="tab" aria-controls="desk-panel" aria-selected="true">Negociação</button><button id="status-tab" class="workspace-tab" role="tab" aria-controls="status-panel" aria-selected="false" tabindex="-1">Status <span class="tab-count" id="event-count">0</span></button></div><span class="workspace-hint">Prioridade de preço e chegada</span></div>
+
+        <section id="desk-panel" role="tabpanel" aria-labelledby="desk-tab">
+          <div class="trading-grid">
+            <section class="panel order-entry" aria-labelledby="entry-title">
+              <div class="panel-heading"><h2 id="entry-title">Nova ordem</h2></div>
+              <form id="order-form" novalidate>
+                <div class="segmented type-selector" role="group" aria-label="Tipo de ordem"><button type="button" class="selected" data-order-type="limit" aria-pressed="true">Limit</button><button type="button" data-order-type="market" aria-pressed="false">Market</button><button type="button" data-order-type="peg" aria-pressed="false">Pegged</button></div>
+                <div class="side-selector" role="group" aria-label="Lado da ordem"><button type="button" class="selected" data-order-side="buy" aria-pressed="true">Comprar</button><button type="button" data-order-side="sell" aria-pressed="false">Vender</button></div>
+                <div class="field" id="price-field"><label for="order-price">Preço limite</label><div class="input-wrap"><span class="input-prefix">R$</span><input id="order-price" name="price" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="price-help" required><span class="input-suffix">BRL</span></div><small id="price-help">Clique em um preço do livro para preenchê-lo.</small></div>
+                <div class="peg-reference" id="peg-reference" hidden><span>Referência automática</span><strong id="peg-reference-label">Melhor bid</strong><small id="peg-reference-description">Acompanha o melhor preço de compra.</small></div>
+                <div class="field"><label for="order-quantity">Quantidade</label><div class="input-wrap"><input id="order-quantity" name="quantity" type="text" inputmode="numeric" autocomplete="off" placeholder="0" required><span class="input-suffix">unidades</span></div></div>
+                <div class="order-estimate"><span id="estimate-label">Valor na ordem</span><strong id="order-estimate">—</strong></div>
+                <button type="submit" id="submit-order" class="button submit-button buy-submit" data-mutation disabled><span id="submit-label">Enviar compra</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg></button>
+                <p class="order-rule" id="order-rule">Pede confirmação se cruzar o livro. O saldo restante entra no livro.</p>
+              </form>
+              <form id="manage-order-form" class="manage-order-form" aria-label="Alterar ou cancelar por ID" novalidate>
+                <div class="field">
+                  <label for="manage-order-id">Gerenciar ordem por ID</label>
+                  <div class="input-wrap"><input id="manage-order-id" name="order-id" type="text" inputmode="numeric" autocomplete="off" placeholder="Ex.: 12" maxlength="21" aria-describedby="manage-order-error" required></div>
+                </div>
+                <div class="manage-order-actions">
+                  <button type="submit" id="amend-by-id" name="action" value="amend" class="button button-secondary" data-mutation disabled>Alterar</button>
+                  <button type="submit" id="cancel-by-id" name="action" value="cancel" class="button button-secondary" data-mutation disabled>Cancelar</button>
+                </div>
+                <p id="manage-order-error" class="inline-error" role="alert" hidden></p>
+              </form>
+              <div class="entry-footer">Simulação local. Sem envio ao mercado.</div>
+            </section>
+
+            <section class="panel book-panel" aria-labelledby="book-title">
+              <div class="panel-heading book-heading">
+                <div><h2 id="book-title">Livro de ofertas</h2><span class="panel-subtitle" id="book-level-count">0 faixas de preço</span></div>
+                <div class="segmented compact" role="group" aria-label="Visualização do livro">
+                  <button type="button" data-book-mode="orders" aria-pressed="false" title="Como print book: uma ordem por linha, em prioridade de preço e chegada">Por ordem</button>
+                  <button type="button" data-book-mode="levels" class="selected" aria-pressed="true">Por nível</button>
+                  <button type="button" data-book-mode="cumulative" aria-pressed="false">Acumulado</button>
+                </div>
+              </div>
+              <div class="book-side-titles"><span class="buy-text">Compras</span><span class="sell-text">Vendas</span></div>
+              <div class="book-column-headings" id="book-column-headings"><div><span class="book-quantity-label">Quantidade</span><span>Preço (R$)</span></div><div><span>Preço (R$)</span><span class="book-quantity-label">Quantidade</span></div></div>
+              <div id="book-content" class="book-content" aria-label="Níveis do livro de ofertas"><div class="empty-state"><strong>Livro vazio</strong><p>Envie uma ordem limit ou carregue a demonstração.</p></div></div>
+              <div class="book-liquidity"><div class="liquidity-track" aria-hidden="true"><span id="buy-liquidity-bar"></span><span id="sell-liquidity-bar"></span></div><div><span><span class="buy-text" id="buy-liquidity">0</span> em compra</span><span><span class="sell-text" id="sell-liquidity">0</span> em venda</span></div></div>
+              <div class="book-caption" id="book-caption">Quantidade em cada preço · barras na mesma escala</div>
+            </section>
+
+            <section class="panel trades-panel" aria-labelledby="trades-title"><div class="panel-heading"><div><h2 id="trades-title">Últimas execuções</h2><span class="panel-subtitle">Mais recentes primeiro</span></div></div><div class="trades-column-headings"><span>Preço (R$)</span><span>Quantidade</span><span>Horário</span></div><div id="trades-content" class="trades-content"><div class="empty-state"><strong>Nenhuma execução</strong><p>As execuções aparecem quando houver ordens compatíveis.</p></div></div><div class="trades-caption"><span class="buy-text">↗ Compra</span><span class="sell-text">↘ Venda</span><span>lado agressor</span></div></section>
+          </div>
+
+          <section class="panel orders-panel" aria-labelledby="orders-title"><div class="panel-heading orders-heading"><div><h2 id="orders-title">Ordens <span class="heading-count" id="open-order-count">0 abertas</span></h2><span class="panel-subtitle" id="orders-subtitle">Por lado, melhor preço e prioridade na faixa</span></div><div class="table-filters"><label class="visually-hidden" for="order-status-filter">Filtrar ordens por status</label><select id="order-status-filter"><option value="active">Abertas</option><option value="all">Todas</option><option value="filled">Executadas</option><option value="cancelled">Canceladas</option></select><label class="visually-hidden" for="order-side-filter">Filtrar ordens por lado</label><select id="order-side-filter"><option value="all">Todos os lados</option><option value="buy">Compras</option><option value="sell">Vendas</option></select></div></div><div class="table-scroll"><table class="orders-table"><thead><tr><th>Ordem</th><th>Lado</th><th>Tipo</th><th class="numeric">Preço (R$)</th><th class="numeric">Restante</th><th class="numeric">Fila no preço</th><th>Status</th><th class="actions-heading">Ações</th></tr></thead><tbody id="orders-body"><tr><td colspan="8" class="empty-table">As ordens da sessão aparecerão aqui.</td></tr></tbody></table></div><div class="table-footer"><span id="orders-pagination-label">Nenhuma ordem</span><div class="pagination"><button id="orders-previous" class="small-button" disabled aria-label="Página anterior de ordens">←</button><button id="orders-next" class="small-button" disabled aria-label="Próxima página de ordens">→</button></div></div></section>
+        </section>
+
+        <section id="status-panel" role="tabpanel" aria-labelledby="status-tab" hidden>
+          <div class="status-summary"><article><span>Ordens enviadas</span><strong id="submitted-count">0</strong></article><article><span>Ordens abertas</span><strong id="status-open-count">0</strong></article><article><span>Ordens canceladas</span><strong id="cancelled-count">0</strong></article><article><span>Quantidade negociada</span><strong id="status-executed-quantity">0</strong></article></div>
+          <section class="panel activity-panel" aria-labelledby="activity-title"><div class="panel-heading activity-heading"><div><h2 id="activity-title">Atividade da sessão</h2><span class="panel-subtitle">Ordens, execuções, alterações de referência e erros</span></div><div class="activity-filters"><label class="visually-hidden" for="event-search">Buscar na atividade</label><input type="search" id="event-search" placeholder="Buscar mensagem ou ordem…" autocomplete="off"><label class="visually-hidden" for="event-filter">Filtrar tipo de evento</label><select id="event-filter"><option value="all">Todos os eventos</option><option value="orders">Ordens</option><option value="trade">Execuções</option><option value="repriced">Pegged</option><option value="error">Erros</option><option value="system">Sistema</option></select></div></div><ol id="events-content" class="events-list"><li class="empty-state"><strong>Sem atividade</strong><p>As operações desta sessão serão registradas aqui.</p></li></ol><div class="activity-footer" id="events-footer">Os 300 eventos mais recentes ficam disponíveis nesta sessão.</div></section>
+        </section>
+      </main>
+
+      <footer class="app-footer"><div class="connection" id="connection" data-state="connecting" role="status"><span class="connection-dot" aria-hidden="true"></span><span id="connection-text">Conectando</span></div><span>Atualização automática a cada segundo</span><span id="session-detail">Conectando à engine</span><span>Livro compartilhado entre as abas desta sessão</span></footer>
+    </div>
+
+    <dialog id="amend-dialog" class="modal" aria-labelledby="amend-title" aria-describedby="amend-description"><form id="amend-form" novalidate><div class="modal-heading"><div><h2 id="amend-title">Alterar ordem</h2></div><button type="button" class="icon-button" data-close-dialog="amend-dialog" aria-label="Fechar alteração">×</button></div><p id="amend-description" class="modal-description"></p><div class="field" id="amend-price-field"><label for="amend-price">Novo preço limite</label><div class="input-wrap"><span class="input-prefix">R$</span><input id="amend-price" type="text" inputmode="decimal" autocomplete="off" required></div></div><div class="field"><label for="amend-quantity">Nova quantidade restante</label><div class="input-wrap"><input id="amend-quantity" type="text" inputmode="numeric" autocomplete="off" required><span class="input-suffix">unidades</span></div></div><p class="modal-note" id="amend-note">Alterar o preço ou aumentar a quantidade reposiciona a ordem na fila. A alteração pode gerar trades.</p><p id="amend-error" class="inline-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button button-secondary" data-close-dialog="amend-dialog">Voltar</button><button type="submit" id="confirm-amend" class="button button-primary" data-mutation>Salvar alteração</button></div></form></dialog>
+
+    <dialog id="cancel-dialog" class="modal" aria-labelledby="cancel-title" aria-describedby="cancel-description"><form id="cancel-form"><div class="modal-heading"><div><h2 id="cancel-title">Cancelar ordem?</h2></div><button type="button" class="icon-button" data-close-dialog="cancel-dialog" aria-label="Fechar cancelamento">×</button></div><p id="cancel-description" class="modal-description"></p><p class="modal-note">A quantidade restante será retirada do livro. As execuções já realizadas serão preservadas.</p><p id="cancel-error" class="inline-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button button-secondary" data-close-dialog="cancel-dialog">Voltar</button><button type="submit" id="confirm-cancel" class="button button-danger" data-mutation>Cancelar ordem</button></div></form></dialog>
+
+    <dialog id="reset-dialog" class="modal" aria-labelledby="reset-title" aria-describedby="reset-description"><form id="reset-form"><div class="modal-heading"><div><h2 id="reset-title">Reiniciar a sessão?</h2></div><button type="button" class="icon-button" data-close-dialog="reset-dialog" aria-label="Fechar reinício">×</button></div><p id="reset-description" class="modal-description">Todas as ordens, execuções e eventos desta sessão serão apagados.</p><p class="modal-note">A sessão é compartilhada com as outras abas conectadas a este servidor. O livro volta a ficar vazio.</p><p id="reset-error" class="inline-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button button-secondary" data-close-dialog="reset-dialog">Manter sessão</button><button type="submit" id="confirm-reset" class="button button-danger" data-mutation>Reiniciar sessão</button></div></form></dialog>
+    <dialog id="limit-dialog" class="modal" aria-labelledby="limit-title" aria-describedby="limit-description limit-best-price limit-note">
+      <form id="limit-form">
+        <div class="modal-heading">
+          <div><h2 id="limit-title">Esta limit cruza o livro</h2></div>
+          <button type="button" class="icon-button" data-close-dialog="limit-dialog" aria-label="Fechar confirmação">×</button>
+        </div>
+        <p id="limit-description" class="modal-description"></p>
+        <p id="limit-best-price" class="modal-description"></p>
+        <p id="limit-note" class="modal-note">Ao confirmar, a ordem será executada imediatamente, total ou parcialmente, nos preços disponíveis dentro do seu limite. O melhor preço não é garantido para toda a quantidade. O saldo não executado ficará no livro ao preço limite.</p>
+        <p id="limit-changed" class="inline-error" role="alert" hidden>A sessão ou os dados da ordem mudaram desde o aviso anterior. Confira os valores atualizados e confirme novamente.</p>
+        <p id="limit-error" class="inline-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="decline-limit" class="button button-secondary" data-close-dialog="limit-dialog" autofocus>Voltar sem enviar</button>
+          <button type="submit" id="confirm-limit" class="button button-primary" data-mutation>Confirmar envio</button>
+        </div>
+      </form>
+    </dialog>
+    <noscript><div class="noscript-message">Ative o JavaScript para usar a interface. A aplicação de terminal continua disponível.</div></noscript>
+  </body>
+</html>
